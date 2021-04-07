@@ -2,7 +2,7 @@ from typing import List
 from typing import Union
 import numpy as np
 from skimage import transform
-from skimage import feature
+from skimage import registration
 import cv2
 
 from merlin.core import analysistask
@@ -78,14 +78,14 @@ class Warp(analysistask.ParallelAnalysisTask):
 
     def _process_transformations(self, transformationList, fov) -> None:
         """
-        Process the transformations determined for a given fov. 
+        Process the transformations determined for a given fov.
 
-        The list of transformation is used to write registered images and 
+        The list of transformation is used to write registered images and
         the transformation list is archived.
 
         Args:
             transformationList: A list of transformations that contains a
-                transformation for each data channel. 
+                transformation for each data channel.
             fov: The fov that is being transformed.
         """
 
@@ -123,7 +123,7 @@ class Warp(analysistask.ParallelAnalysisTask):
                             inputImage, t, preserve_range=True) \
                         .astype(inputImage.dtype)
                     outputTif.save(
-                            transformedImage, 
+                            transformedImage,
                             photometric='MINISBLACK',
                             metadata=fiducialImageDescription)
 
@@ -196,10 +196,10 @@ class FiducialCorrelationWarp(Warp):
         # use the same alignment if they are from the same imaging round
         fixedImage = self._filter(
             self.dataSet.get_fiducial_image(0, fragmentIndex))
-        offsets = [feature.register_translation(
+        offsets = [registration.phase_cross_correlation(
             fixedImage,
             self._filter(self.dataSet.get_fiducial_image(x, fragmentIndex)),
-            100)[0] for x in
+            upsample_factor=100)[0] for x in
                    self.dataSet.get_data_organization().get_data_channels()]
         transformations = [transform.SimilarityTransform(
             translation=[-x[1], -x[0]]) for x in offsets]
