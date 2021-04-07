@@ -204,7 +204,7 @@ class DataSet(object):
 
     def writer_for_analysis_images(
             self, analysisTask: TaskOrName, imageBaseName: str,
-            imageIndex: int = None, imagej: bool = True) -> tifffile.TiffWriter:
+            imageIndex: int = None, imagej: bool = False) -> tifffile.TiffWriter:
         """Get a writer for writing tiff files from an analysis task.
 
         Args:
@@ -574,7 +574,7 @@ class DataSet(object):
     def get_log_subdirectory(self, analysisTask: TaskOrName):
         return self.get_analysis_subdirectory(
                 analysisTask, subdirectory='log')
-        
+
     def save_analysis_task(self, analysisTask: analysistask.AnalysisTask,
                            overwrite: bool = False):
         saveName = os.sep.join([self.get_task_subdirectory(
@@ -622,10 +622,10 @@ class DataSet(object):
             analysisModule = importlib.import_module(parameters['module'])
             analysisTask = getattr(analysisModule, parameters['class'])
             return analysisTask(self, parameters, analysisTaskName)
-            
+
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
         """
-        Remove all files associated with the provided analysis 
+        Remove all files associated with the provided analysis
         from this data set.
 
         Before deleting an analysis task, it must be verified that the
@@ -652,7 +652,7 @@ class DataSet(object):
 
     def analysis_exists(self, analysisTaskName: str) -> bool:
         """
-        Determine if an analysis task with the specified name exists in this 
+        Determine if an analysis task with the specified name exists in this
         dataset.
         """
         analysisPath = self.get_analysis_subdirectory(
@@ -771,11 +771,11 @@ class DataSet(object):
             The start time for the analysis task execution in seconds since
             the epoch in UTC.
         """
-        with open(self._analysis_status_file(analysisTask, 'start', 
+        with open(self._analysis_status_file(analysisTask, 'start',
                                              fragmentIndex), 'r') as f:
             return float(f.read())
 
-    def get_analysis_complete_time(self, 
+    def get_analysis_complete_time(self,
                                    analysisTask: analysistask.AnalysisTask,
                                    fragmentIndex: int = None) -> float:
         """Get the time that this analysis task completed.
@@ -784,7 +784,7 @@ class DataSet(object):
             The completion time for the analysis task execution in seconds since
             the epoch in UTC.
         """
-        with open(self._analysis_status_file(analysisTask, 'done', 
+        with open(self._analysis_status_file(analysisTask, 'done',
                                              fragmentIndex), 'r') as f:
             return float(f.read())
 
@@ -886,7 +886,7 @@ class ImageDataSet(DataSet):
 
         if microscopeParametersName is not None:
             self._import_microscope_parameters(microscopeParametersName)
-    
+
         self._load_microscope_parameters()
 
     def get_image_file_names(self):
@@ -903,7 +903,7 @@ class ImageDataSet(DataSet):
                 imageIn = np.flip(imageIn, axis=1)
             if self.flipVertical:
                 imageIn = np.flip(imageIn, axis=0)
-            return imageIn 
+            return imageIn
 
     def image_stack_size(self, imagePath):
         """
@@ -923,12 +923,12 @@ class ImageDataSet(DataSet):
         destPath = os.sep.join(
                 [self.analysisPath, 'microscope_parameters.json'])
 
-        shutil.copyfile(sourcePath, destPath) 
+        shutil.copyfile(sourcePath, destPath)
 
-    def _load_microscope_parameters(self): 
+    def _load_microscope_parameters(self):
         path = os.sep.join(
                 [self.analysisPath, 'microscope_parameters.json'])
-        
+
         if os.path.exists(path):
             with open(path) as inputFile:
                 self.microscopeParameters = json.load(inputFile)
@@ -1139,7 +1139,7 @@ class MERFISHDataSet(ImageDataSet):
 
     def position_to_z_index(self, zPosition: float) -> int:
         """Get the z index associated with the specified z position
-        
+
         Raises:
              Exception: If the provided z position is not specified in this
                 dataset
@@ -1199,8 +1199,8 @@ class MERFISHDataSet(ImageDataSet):
     def _import_positions(self, positionFileName):
         sourcePath = os.sep.join([merlin.POSITION_HOME, positionFileName])
         destPath = os.sep.join([self.analysisPath, 'positions.csv'])
-            
-        shutil.copyfile(sourcePath, destPath)    
+
+        shutil.copyfile(sourcePath, destPath)
 
     def _convert_parameter_list(self, listIn, castFunction, delimiter=';'):
         return [castFunction(x) for x in listIn.split(delimiter) if len(x)>0]
