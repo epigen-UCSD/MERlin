@@ -97,7 +97,7 @@ class PixelBasedDecoder(object):
                 imageData[i, :, :], (filterSize, filterSize), lowPassSigma)
 
         pixelTraces = np.reshape(
-                filteredImages, 
+                filteredImages,
                 (filteredImages.shape[0], np.prod(filteredImages.shape[1:])))
         scaledPixelTraces = np.transpose(
                 np.array([(p-b)/s for p, s, b in zip(pixelTraces, scaleFactors,
@@ -242,10 +242,10 @@ class PixelBasedDecoder(object):
 
         fullDF = pandas.concat([df, intensities], 1)
         fullDF = fullDF[(fullDF['x'].between(cropWidth,
-                                             decodedImage.shape[0] - cropWidth,
+                                             decodedImage.shape[-2] - cropWidth,
                                              inclusive=False)) &
                         (fullDF['y'].between(cropWidth,
-                                             decodedImage.shape[1] - cropWidth,
+                                             decodedImage.shape[-1] - cropWidth,
                                              inclusive=False)) &
                         (fullDF['area'] >= minimumArea)]
 
@@ -260,16 +260,16 @@ class PixelBasedDecoder(object):
             ignoreBlanks: Flag to set if the barcodes corresponding to blanks
                 should be ignored. If True, barcodes corresponding to a name
                 that contains 'Blank' are ignored.
-            includeErrors: Flag to set if barcodes corresponding to single bit 
+            includeErrors: Flag to set if barcodes corresponding to single bit
                 errors should be added.
         Returns:
             A 2d numpy array where each row is a normalized barcode and each
                 column is the corresponding normalized bit value.
         """
-        
+
         barcodeSet = self._codebook.get_barcodes(ignoreBlanks=ignoreBlanks)
         magnitudes = np.sqrt(np.sum(barcodeSet*barcodeSet, axis=1))
-       
+
         if not includeErrors:
             weightedBarcodes = np.array(
                 [normalize(x) for x, m in zip(barcodeSet, magnitudes)])

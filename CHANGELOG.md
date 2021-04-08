@@ -45,3 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - An alternative Lucy-Richardson deconvolution approach that requires ~10x fewer iterations.
 
+## Changes at UCSD Center for Epigenomics
+### Fixed
+- Fixed problems with newer versions of certain packages so that MERlin can now run with the current versions of all packages installed.
+- Fixed an issue we were having with the 3D decoding option.
