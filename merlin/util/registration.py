@@ -111,20 +111,21 @@ def radial_center(imageIn) -> Tuple[float, float]:
     fdv = signal.convolve2d(dIdv, h, 'same')
     dImag2 = np.multiply(fdu, fdu) + np.multiply(fdv, fdv)
 
-    m = np.divide(-(fdv + fdu), (fdu - fdv))
+    with np.errstate(divide='ignore', invalid='ignore'):
+        m = np.divide(-(fdv + fdu), (fdu - fdv))
 
-    if np.any(np.isnan(m)):
-        unsmoothm = np.divide(dIdv + dIdu, dIdu - dIdv)
-        m[np.isnan(m)] = unsmoothm[np.isnan(m)]
+        if np.any(np.isnan(m)):
+            unsmoothm = np.divide(dIdv + dIdu, dIdu - dIdv)
+            m[np.isnan(m)] = unsmoothm[np.isnan(m)]
 
-    if np.any(np.isnan(m)):
-        m[np.isnan(m)] = 0
+        if np.any(np.isnan(m)):
+            m[np.isnan(m)] = 0
 
-    if np.any(np.isinf(m)):
-        if ~np.all(np.isinf(m)):
-            m[np.isinf(m)] = 10 * np.max(m[~np.isinf(m)])
-        else:
-            m = np.divide((dIdv + dIdu), (dIdu - dIdv))
+        if np.any(np.isinf(m)):
+            if ~np.all(np.isinf(m)):
+                m[np.isinf(m)] = 10 * np.max(m[~np.isinf(m)])
+            else:
+                m = np.divide((dIdv + dIdu), (dIdu - dIdv))
 
     b = ym - np.multiply(m, xm)
 
