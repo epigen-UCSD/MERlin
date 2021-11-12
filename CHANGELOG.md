@@ -49,3 +49,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed problems with newer versions of certain packages so that MERlin can now run with the current versions of all packages installed.
 - Fixed an issue we were having with the 3D decoding option.
+### Added
+- Added a FiducialBeadWarp task that performs drift correction more robustly than FiducialCorrelationWarp. Only suitable for registration using fiducial beads.
