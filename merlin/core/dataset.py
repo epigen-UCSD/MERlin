@@ -891,7 +891,7 @@ class ImageDataSet(DataSet):
 
     def get_image_file_names(self):
         return sorted(self.rawDataPortal.list_files(
-            extensionList=['.dax', '.tif', '.tiff']))
+            extensionList=['.dax', '.tif', '.tiff', '.zarr', '.zar']))
 
     def load_image(self, imagePath, frameIndex):
         with imagereader.infer_reader(

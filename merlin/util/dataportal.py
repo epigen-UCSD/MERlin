@@ -256,7 +256,10 @@ class LocalFilePortal(FilePortal):
 
     def __init__(self, fileName: str):
         super().__init__(fileName)
-        self._fileHandle = open(fileName, 'rb')
+        try:
+            self._fileHandle = open(fileName, 'rb')
+        except IsADirectoryError:  # For .zarr files
+            self._fileHandle = None
 
     def get_sibling_with_extension(self, newExtension: str):
         return LocalFilePortal(self._exchange_extension(newExtension))
@@ -273,7 +276,10 @@ class LocalFilePortal(FilePortal):
         return self._fileHandle.read(endByte-startByte)
 
     def close(self) -> None:
-        self._fileHandle.close()
+        try:
+            self._fileHandle.close()
+        except AttributeError:  # For .zarr files
+            pass
 
 
 class S3FilePortal(FilePortal):

@@ -36,9 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the filemap to only store the file name so that it can easily be pointed to new data home directories. This change maintains backward compatibility.
 - Improved decoding speed
 ### Added
-- Parameters to filter tasks that enable removing barcodes that were putatively duplicated across adjacent z planes. 
+- Parameters to filter tasks that enable removing barcodes that were putatively duplicated across adjacent z planes.
 
-## [0.1.6] - 
+## [0.1.6] -
 ### Fixed
 - Fixed bug and edge cases in removal of barcodes duplicated across z planes. Moved to the decode step to prevent unintended conflict with misidentification rate determination.
 
@@ -51,3 +51,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed an issue we were having with the 3D decoding option.
 ### Added
 - Added a FiducialBeadWarp task that performs drift correction more robustly than FiducialCorrelationWarp. Only suitable for registration using fiducial beads.
+- Added zarr file format support for raw images.

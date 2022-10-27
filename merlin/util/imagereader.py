@@ -2,6 +2,7 @@ import hashlib
 import numpy as np
 import re
 import tifffile
+import zarr
 from typing import List
 
 from merlin.util import dataportal
@@ -48,6 +49,8 @@ def infer_reader(filePortal: dataportal.FilePortal, verbose: bool = False):
         else:
             raise IOError('Loading tiff files from %s is not yet implemented'
                           % type(filePortal))
+    elif ext == ".zar" or ext == ".zarr":
+        return ZarrReader(filePortal._fileName, verbose=verbose)
     raise IOError(
         "only .dax and .tif are supported (case sensitive..)")
 
@@ -375,3 +378,23 @@ class TifReader(Reader):
             image_data = image_data.astype(np.uint16)
 
         return image_data
+
+
+class ZarrReader(Reader):
+    """
+    Zarr reader class.
+    """
+
+    def __init__(self, filename, verbose=False):
+        super(ZarrReader, self).__init__(filename, verbose)
+
+        self.zarr = zarr.open(filename, mode='r')
+        self.number_frames, self.image_width, self.image_height = self.zarr.shape
+
+    def load_frame(self, frame_number):
+        """
+        Load a frame & return it as a np array.
+        """
+        super(ZarrReader, self).load_frame(frame_number)
+
+        return self.zarr[frame_number, :, :]
