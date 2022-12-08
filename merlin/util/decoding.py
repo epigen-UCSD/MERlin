@@ -240,13 +240,13 @@ class PixelBasedDecoder(object):
             globalCentroids[:, [1, 2, 0]]
         df['cell_index'] = -1
 
-        fullDF = pandas.concat([df, intensities], 1)
+        fullDF = pandas.concat([df, intensities], axis=1)
         fullDF = fullDF[(fullDF['x'].between(cropWidth,
                                              decodedImage.shape[-2] - cropWidth,
-                                             inclusive=False)) &
+                                             inclusive="neither")) &
                         (fullDF['y'].between(cropWidth,
                                              decodedImage.shape[-1] - cropWidth,
-                                             inclusive=False)) &
+                                             inclusive="neither")) &
                         (fullDF['area'] >= minimumArea)]
 
         return fullDF
