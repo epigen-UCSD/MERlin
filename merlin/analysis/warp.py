@@ -364,23 +364,27 @@ class FiducialBeadWarp(Warp):
                 Xh1 = self._get_local_max(im1_, np.mean(im1_) + np.std(im1_) * self.parameters['threshold_sigma'])
                 Xh2 = self._get_local_max(im2_, np.mean(im2_) + np.std(im2_) * self.parameters['threshold_sigma'])
 
-                tx, ty = self._fftalign_2d(im1_, im2_, center=[0, 0])
-                nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(Xh1[:, :2])
-                distances, indices = nbrs.kneighbors(Xh2[:, :2] + [tx, ty])
-                keep = distances.flatten() < 3
-                indices_ = indices.flatten()[keep]
-                if len(indices_) > 0:
-                    try:
-                        Txyz = np.median(Xh2[keep, :2] - Xh1[indices_, :2], 0)
-                    except Exception:
-                        print("Xh1", Xh1)
-                        print("Xh2", Xh2)
-                        print("keep", keep)
-                        print("indices_", indices_)
-                        raise
-                    Txyzs.append(Txyz)
+                if len(Xh1) > 0 and len(Xh2) > 0:
+                    tx, ty = self._fftalign_2d(im1_, im2_, center=[0, 0])
+                    nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(Xh1[:, :2])
+                    distances, indices = nbrs.kneighbors(Xh2[:, :2] + [tx, ty])
+                    keep = distances.flatten() < 3
+                    indices_ = indices.flatten()[keep]
+                    if len(indices_) > 0:
+                        try:
+                            Txyz = np.median(Xh2[keep, :2] - Xh1[indices_, :2], 0)
+                        except Exception:
+                            print("Xh1", Xh1)
+                            print("Xh2", Xh2)
+                            print("keep", keep)
+                            print("indices_", indices_)
+                            raise
+                        Txyzs.append(Txyz)
+                    else:
+                        pass
+                        #print("No kept beads, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
                 else:
-                    print("No kept beads, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
+                    print("No beads found, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
             offsets.append(np.median(Txyzs, 0))
         transformations = [transform.SimilarityTransform(
             translation=[-x[1], -x[0]]) for x in offsets]
