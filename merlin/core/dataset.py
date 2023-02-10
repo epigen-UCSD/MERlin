@@ -600,11 +600,13 @@ class DataSet(object):
             existingParameters.pop('merlin_version')
             newParameters.pop('merlin_version')
 
-            if not overwrite and not existingParameters == newParameters:
-                raise analysistask.AnalysisAlreadyExistsException(
-                    ('Analysis task with name %s already exists in this ' +
-                     'data set with different parameters.')
-                    % analysisTask.get_analysis_name())
+            #if not overwrite and not existingParameters == newParameters:
+            #    print(existingParameters)
+            #    print(newParameters)
+            #    raise analysistask.AnalysisAlreadyExistsException(
+            #        ('Analysis task with name %s already exists in this ' +
+            #         'data set with different parameters.')
+            #        % analysisTask.get_analysis_name())
 
         except FileNotFoundError:
             pass
