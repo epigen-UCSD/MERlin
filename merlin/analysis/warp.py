@@ -171,6 +171,8 @@ class FiducialCorrelationWarp(Warp):
 
         if 'highpass_sigma' not in self.parameters:
             self.parameters['highpass_sigma'] = 3
+        if 'reference_round' not in self.parameters:
+            self.parameters['reference_round'] = 0
 
     def fragment_count(self):
         return len(self.dataSet.get_fovs())
@@ -196,7 +198,7 @@ class FiducialCorrelationWarp(Warp):
         # TODO - this can be more efficient since some images should
         # use the same alignment if they are from the same imaging round
         fixedImage = self._filter(
-            self.dataSet.get_fiducial_image(0, fragmentIndex))
+            self.dataSet.get_fiducial_image(self.parameters['reference_round'], fragmentIndex))
         offsets = [registration.phase_cross_correlation(
             fixedImage,
             self._filter(self.dataSet.get_fiducial_image(x, fragmentIndex)),
@@ -229,6 +231,8 @@ class FiducialBeadWarp(Warp):
             self.parameters['filter_size'] = 15
         if 'threshold_sigma' not in self.parameters:
             self.parameters['threshold_sigma'] = 4
+        if 'reference_round' not in self.parameters:
+            self.parameters['reference_round'] = 0
 
     def fragment_count(self):
         return len(self.dataSet.get_fovs())
@@ -348,7 +352,7 @@ class FiducialBeadWarp(Warp):
 
     def _run_analysis(self, fragmentIndex: int):
         fixedImage = self._filter(
-            self.dataSet.get_fiducial_image(0, fragmentIndex))
+            self.dataSet.get_fiducial_image(self.parameters['reference_round'], fragmentIndex))
         offsets = []
         im2 = fixedImage.copy()
         for channel in self.dataSet.get_data_organization().get_data_channels():
