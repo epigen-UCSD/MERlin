@@ -129,15 +129,16 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         """
         blankHistogram = self.get_blank_count_histogram()
         totalHistogram = self.get_coding_count_histogram()
-        blankFraction = blankHistogram / totalHistogram
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            blankFraction = blankHistogram / totalHistogram
+            decodeTask = self.dataSet.load_analysis_task(
+                self.parameters['decode_task'])
+            codebook = decodeTask.get_codebook()
+            blankBarcodeCount = len(codebook.get_blank_indexes())
+            codingBarcodeCount = len(codebook.get_coding_indexes())
+            blankFraction /= blankBarcodeCount/(
+                    blankBarcodeCount + codingBarcodeCount)
         blankFraction[totalHistogram == 0] = np.finfo(blankFraction.dtype).max
-        decodeTask = self.dataSet.load_analysis_task(
-            self.parameters['decode_task'])
-        codebook = decodeTask.get_codebook()
-        blankBarcodeCount = len(codebook.get_blank_indexes())
-        codingBarcodeCount = len(codebook.get_coding_indexes())
-        blankFraction /= blankBarcodeCount/(
-                blankBarcodeCount + codingBarcodeCount)
         return blankFraction
 
     def calculate_misidentification_rate_for_threshold(
