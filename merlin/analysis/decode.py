@@ -64,6 +64,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                 self.parameters['z_duplicate_zPlane_threshold'] = 1
             if 'z_duplicate_xy_pixel_threshold' not in self.parameters:
                 self.parameters['z_duplicate_xy_pixel_threshold'] = np.sqrt(2)
+        if 'n_jobs' not in self.parameters:
+            self.parameters['n_jobs'] = 1
 
         self.cropWidth = self.parameters['crop_width']
         self.imageSize = dataSet.get_image_dimensions()
@@ -148,7 +150,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     di, pm, npt, d = decoder.decode_pixels(
                         imageSet, scaleFactors, backgrounds,
                         lowPassSigma=lowPassSigma,
-                        distanceThreshold=self.parameters['distance_threshold'])
+                        distanceThreshold=self.parameters['distance_threshold'],
+                        n_jobs=self.parameters['n_jobs'])
 
                     normalizedPixelTraces[zIndex, :, :, :] = npt
                     decodedImages[zIndex, :, :] = di
@@ -187,7 +190,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         di, pm, npt, d = decoder.decode_pixels(
             imageSet, scaleFactors, backgrounds,
             lowPassSigma=self.parameters['lowpass_sigma'],
-            distanceThreshold=self.parameters['distance_threshold'])
+            distanceThreshold=self.parameters['distance_threshold'],
+            n_jobs=self.parameters['n_jobs'])
         self._extract_and_save_barcodes(
             decoder, di, pm, npt, d, fov, zIndex)
 

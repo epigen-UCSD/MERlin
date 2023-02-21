@@ -48,7 +48,8 @@ class PixelBasedDecoder(object):
                       backgrounds: np.ndarray=None,
                       distanceThreshold: float=0.5176,
                       magnitudeThreshold: float=1,
-                      lowPassSigma: float=1):
+                      lowPassSigma: float=1,
+                      n_jobs: int=1):
         """Assign barcodes to the pixels in the provided image stock.
 
         Each pixel is assigned to the nearest barcode from the codebook if
@@ -109,7 +110,7 @@ class PixelBasedDecoder(object):
 
         normalizedPixelTraces = scaledPixelTraces/pixelMagnitudes[:, None]
 
-        neighbors = NearestNeighbors(n_neighbors=1, algorithm='ball_tree')
+        neighbors = NearestNeighbors(n_neighbors=1, algorithm='ball_tree', n_jobs=n_jobs)
         neighbors.fit(self._decodingMatrix)
 
         distances, indexes = neighbors.kneighbors(

@@ -32,6 +32,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             self.parameters['optimize_chromatic_correction'] = False
         if 'crop_width' not in self.parameters:
             self.parameters['crop_width'] = 0
+        if 'n_jobs' not in self.parameters:
+            self.parameters['n_jobs'] = 1
 
         if 'fov_index' in self.parameters:
             logger = self.dataSet.get_logger(self)
@@ -104,7 +106,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         areaThreshold = self.parameters['area_threshold']
         decoder.refactorAreaThreshold = areaThreshold
         di, pm, npt, d = decoder.decode_pixels(warpedImages, scaleFactors,
-                                               backgrounds)
+                                               backgrounds, n_jobs=self.parameters['n_jobs'])
 
         refactors, backgrounds, barcodesSeen = \
             decoder.extract_refactors(
