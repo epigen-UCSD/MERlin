@@ -82,7 +82,7 @@ class AnalysisTask(ABC):
 
     def run(self, overwrite=True) -> None:
         """Run this AnalysisTask.
-        
+
         Upon completion of the analysis, this function informs the DataSet
         that analysis is complete.
 
@@ -134,9 +134,9 @@ class AnalysisTask(ABC):
 
     def _indicate_running(self) -> None:
         """A loop that regularly signals to the dataset that this analysis
-        task is still running successfully. 
+        task is still running successfully.
 
-        Once this function is called, the dataset will be notified every 
+        Once this function is called, the dataset will be notified every
         minute that this analysis is still running until the analysis
         completes.
         """
@@ -183,7 +183,7 @@ class AnalysisTask(ABC):
         analysis task can proceed.
 
         Returns:
-            a list containing the names of the analysis tasks that 
+            a list containing the names of the analysis tasks that
                 this analysis task depends on. If there are no dependencies,
                 an empty list is returned.
         """
@@ -199,7 +199,7 @@ class AnalysisTask(ABC):
 
     def is_error(self):
         """Determines if an error has occurred while running this analysis
-        
+
         Returns:
             True if the analysis is complete and otherwise False.
         """
@@ -207,7 +207,7 @@ class AnalysisTask(ABC):
 
     def is_complete(self):
         """Determines if this analysis has completed successfully
-        
+
         Returns:
             True if the analysis is complete and otherwise False.
         """
@@ -215,7 +215,7 @@ class AnalysisTask(ABC):
 
     def is_started(self):
         """Determines if this analysis has started.
-        
+
         Returns:
             True if the analysis has begun and otherwise False.
         """
@@ -264,7 +264,7 @@ class InternallyParallelAnalysisTask(AnalysisTask):
         self.coreCount = coreCount
 
     def is_parallel(self):
-        return True 
+        return True
 
 
 class ParallelAnalysisTask(AnalysisTask):
@@ -274,8 +274,8 @@ class ParallelAnalysisTask(AnalysisTask):
     # help remove some of the redundant code
 
     """
-    An abstract class for analysis that can be run in multiple parts 
-    independently. Subclasses should implement the analysis to perform in 
+    An abstract class for analysis that can be run in multiple parts
+    independently. Subclasses should implement the analysis to perform in
     the run_analysis() function
     """
 
@@ -345,9 +345,9 @@ class ParallelAnalysisTask(AnalysisTask):
 
     def _indicate_running(self, fragmentIndex: int) -> None:
         """A loop that regularly signals to the dataset that this analysis
-        task is still running successfully. 
+        task is still running successfully.
 
-        Once this function is called, the dataset will be notified every 
+        Once this function is called, the dataset will be notified every
         minute that this analysis is still running until the analysis
         completes.
         """
@@ -368,7 +368,7 @@ class ParallelAnalysisTask(AnalysisTask):
         if fragmentIndex is None:
             for i in range(self.fragment_count()):
                 if self.is_error(i):
-                    return True 
+                    return True
 
             return False
 
@@ -396,7 +396,7 @@ class ParallelAnalysisTask(AnalysisTask):
         if fragmentIndex is None:
             for i in range(self.fragment_count()):
                 if self.is_started(i):
-                    return True 
+                    return True
 
             return False
 

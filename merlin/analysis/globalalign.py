@@ -3,6 +3,10 @@ import numpy as np
 from typing import Tuple
 from typing import List
 from shapely import geometry
+from sklearn.neighbors import NearestNeighbors
+import math
+import functools
+from collections import namedtuple
 
 from merlin.core import analysistask
 
@@ -262,3 +266,79 @@ class CorrelationGlobalAlignment(GlobalAlignment):
         fov2 = self.dataSet.get_fiducial_image(0, 1)
 
         return fov1, fov2
+
+
+Overlap = namedtuple("Overlap", ["fov", "xslice", "yslice"])
+
+
+class UCSDEpigenGlobalAlignment(analysistask.AnalysisTask):
+    def __init__(self, dataSet, parameters=None, analysisName=None):
+        super().__init__(dataSet, parameters, analysisName)
+
+    def get_slice(diff: float, fovsize: int = 220, get_trim: bool = False) -> slice:
+        """Get a slice for the region of an image overlapped by another FOV.
+        :param diff: The amount of overlap in the global coordinate system.
+        :param fovsize: The width/length of a FOV in the global coordinate system, defaults to 220.
+        :param get_trim: If True, return the half of the overlap closest to the edge. This is for
+            determining in which region the barcodes should be trimmed to avoid duplicates.
+        :return: A slice in the FOV coordinate system for the overlap.
+        """
+        if int(diff) == 0:
+            return slice(None)
+        if diff > 0:
+            if get_trim:
+                diff = fovsize - ((fovsize - diff) / 2)
+            overlap = 2048 * diff / fovsize
+            return slice(math.trunc(overlap), None)
+        else:
+            if get_trim:
+                diff = -fovsize - ((-fovsize - diff) / 2)
+            overlap = 2048 * diff / fovsize
+            return slice(None, math.trunc(overlap))
+
+    def local_to_global_coordinates(self, x, y, fov):
+        #global_x = 220 * x / 2048 + np.array(self.positions.loc[fov]["y"])
+        #global_y = 220 * y / 2048 - np.array(self.positions.loc[fov]["x"])
+        #return global_x, global_y
+        pass
+
+    def find_fov_overlaps(self, get_trim: bool = False) -> List[list]:
+        """Identify overlaps between FOVs. With get_trim set to True, this returns half
+        the overlapping area for removing barcodes while False will return the entire
+        overlapping region."""
+        fovsize = self.dataSet.micronsPerPixel * self.dataSet.imageDimensions[0]
+        positions = self.dataSet.get_stage_positions()
+        neighbor_graph = NearestNeighbors()
+        neighbor_graph = neighbor_graph.fit(positions)
+        res = neighbor_graph.radius_neighbors(positions, radius=fovsize, return_distance=True, sort_results=True)
+        overlaps = []
+        pairs = set()
+        for i, (dists, fovs) in enumerate(zip(*res)):
+            i = positions.iloc[i].name
+            for dist, fov in zip(dists, fovs):
+                fov = positions.iloc[fov].name
+                if dist == 0 or (i, fov) in pairs:
+                    continue
+                pairs.update([(i, fov), (fov, i)])
+                diff = positions.loc[i] - positions.loc[fov]
+                _get_slice = functools.partial(self.get_slice, fovsize=fovsize, get_trim=get_trim)
+                overlaps.append(
+                    [
+                        Overlap(i, _get_slice(diff[0]), _get_slice(-diff[1])),
+                        Overlap(fov, _get_slice(-diff[0]), _get_slice(diff[1])),
+                    ]
+                )
+        return overlaps
+
+    def get_estimated_memory(self):
+        return 1
+
+    def get_estimated_time(self):
+        return 0
+
+    def _run_analysis(self):
+        # This analysis task does not need computation
+        pass
+
+    def get_dependencies(self):
+        return []
