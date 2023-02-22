@@ -291,7 +291,7 @@ class DataOrganization(object):
 
                 matchingFiles = False
                 for currentFile in fileNames:
-                    matchedName = matchRE.match(os.path.split(currentFile)[-1])
+                    matchedName = matchRE.search(os.path.split(currentFile)[-1])
                     if matchedName is not None:
                         transformedName = matchedName.groupdict()
                         if transformedName['imageType'] == currentType:
