@@ -96,8 +96,11 @@ class LocalDataPortal(DataPortal):
             return LocalFilePortal(os.path.join(self._basePath, fileName))
 
     def list_files(self, extensionList=None):
-        allFiles = [os.path.join(self._basePath, currentFile)
-                    for currentFile in os.listdir(self._basePath)]
+        allFiles = []
+        root, dirs, files = next(os.walk(self._basePath))
+        allFiles.extend(os.path.join(root, filename) for filename in files)
+        for dir in dirs:
+            allFiles.extend(os.path.join(root, dir, filename) for filename in os.listdir(os.path.join(root, dir)))
         return self._filter_file_list(allFiles, extensionList)
 
 
