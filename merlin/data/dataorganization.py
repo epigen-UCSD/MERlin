@@ -317,6 +317,9 @@ class DataOrganization(object):
             self.fileMap['imagingRound'] = self.fileMap['imagingRound'].astype(int)
             self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
                 self._truncate_file_path)
+            if 'fov' not in self.fileMap:
+                columns = sorted(self.fileMap.filter(like="fov").columns)
+                self.fileMap['fov'] = self.fileMap[columns].agg("_".join, axis=1)
 
             self._validate_file_map()
 
