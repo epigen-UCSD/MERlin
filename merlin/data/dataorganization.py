@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 from typing import List
 from typing import Tuple
 import pandas
@@ -148,7 +149,7 @@ class DataOrganization(object):
         return self.data[self.data['channelName'] ==
                          channelName].index.values.item()
 
-    def get_fiducial_filename(self, dataChannel: int, fov: int) -> str:
+    def get_fiducial_filename(self, dataChannel: int, fov: str) -> str:
         """Get the path for the image file that contains the fiducial
         image for the specified dataChannel and fov.
 
@@ -175,7 +176,7 @@ class DataOrganization(object):
         """
         return self.data.iloc[dataChannel]['fiducialFrame']
 
-    def get_image_filename(self, dataChannel: int, fov: int) -> str:
+    def get_image_filename(self, dataChannel: int, fov: str) -> str:
         """Get the path for the image file that contains the
         images for the specified dataChannel and fov.
 
@@ -251,9 +252,13 @@ class DataOrganization(object):
         return sequentialChannels, sequentialGeneNames
 
     def _get_image_path(
-            self, imageType: str, fov: int, imagingRound: int) -> str:
+            self, imageType: str, fov: str, imagingRound: int) -> str:
         selection = self.fileMap[(self.fileMap['imageType'] == imageType) &
                                  (self.fileMap['fov'] == fov) &
+                                 (self.fileMap['imagingRound'] == imagingRound)]
+        if selection.empty:
+            selection = self.fileMap[(self.fileMap['imageType'] == imageType) &
+                                 (self.fileMap['fov'].astype(int) == int(fov)) &
                                  (self.fileMap['imagingRound'] == imagingRound)]
         filemapPath = selection['imagePath'].values[0]
         return os.path.join(self._dataSet.dataHome, self._dataSet.dataSetName,
@@ -269,7 +274,7 @@ class DataOrganization(object):
         # standard image types.
 
         try:
-            self.fileMap = self._dataSet.load_dataframe_from_csv('filemap')
+            self.fileMap = self._dataSet.load_dataframe_from_csv('filemap', dtype={"fov": str})
             self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
                 self._truncate_file_path)
 
@@ -309,15 +314,14 @@ class DataOrganization(object):
                            currentType))
 
             self.fileMap = pandas.DataFrame(fileData)
-            self.fileMap[['imagingRound', 'fov']] = \
-                self.fileMap[['imagingRound', 'fov']].astype(int)
+            self.fileMap['imagingRound'] = self.fileMap['imagingRound'].astype(int)
             self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
                 self._truncate_file_path)
 
             self._validate_file_map()
 
             self._dataSet.save_dataframe_to_csv(
-                    self.fileMap, 'filemap', index=False)
+                    self.fileMap, 'filemap', index=False, quoting=csv.QUOTE_NONNUMERIC)
 
     def _validate_file_map(self) -> None:
         """

@@ -13,18 +13,18 @@ def test_metadata(simple_merfish_data):
     assert not randomMetadata.is_complete()
     assert randomMetadata.metadata_name() == 'testplots/TestPlotMetadata'
 
-    for i in range(randomTask.fragment_count()-1):
+    for i in range(len(randomTask.fragment_list())-1):
         randomTask.run(i)
         randomMetadata.update()
         assert not randomTask.is_complete()
         assert not randomMetadata.is_complete()
 
-    randomTask.run(randomTask.fragment_count()-1)
+    randomTask.run(len(randomTask.fragment_list())-1)
     randomMetadata.update()
     assert np.isclose(
         randomMetadata.get_mean_values(),
         np.array([np.mean(randomTask.get_random_result(i))
-                  for i in range(randomTask.fragment_count())])).all()
+                  for i in range(len(randomTask.fragment_list()))])).all()
     assert randomTask.is_complete()
     assert randomMetadata.is_complete()
     simple_merfish_data.delete_analysis(randomTask)
@@ -40,7 +40,7 @@ def test_plotengine(simple_merfish_data):
     randomTask.run(0)
     assert not plotEngine.take_step()
 
-    for i in range(1, randomTask.fragment_count()):
+    for i in range(1, len(randomTask.fragment_list())):
         randomTask.run(i)
     assert plotEngine.take_step()
     assert plotEngine.get_plots()[0].is_complete()

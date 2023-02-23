@@ -14,9 +14,6 @@ class PartitionBarcodes(analysistask.ParallelAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 2048
 

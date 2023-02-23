@@ -42,10 +42,10 @@ class BarcodeDB:
             self._codebook = self._analysisTask.get_codebook()
         except AttributeError:
             self._codebook = self._dataSet.get_codebook()
-            
+
     def _get_bc_column_types(self):
         columnInformation = {'barcode_id': np.uint16,
-                             'fov': np.uint16,
+                             'fov': str,
                              'mean_intensity': np.float32,
                              'max_intensity': np.float32,
                              'area': np.uint16,
@@ -196,7 +196,7 @@ class PyTablesBarcodeDB(BarcodeDB):
         if fov is None:
             barcodes = pandas.concat(
                 [self.get_barcodes(fov=x, columnList=columnList)
-                 for x in self._dataSet.get_fovs()], sort=False)
+                 for x in self._analysisTask.fragment_list()], sort=False)
         else:
             try:
                 with self._dataSet.open_pandas_hdfstore(

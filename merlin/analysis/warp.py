@@ -174,9 +174,6 @@ class FiducialCorrelationWarp(Warp):
         if 'reference_round' not in self.parameters:
             self.parameters['reference_round'] = 0
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 2048
 
@@ -233,9 +230,6 @@ class FiducialBeadWarp(Warp):
             self.parameters['threshold_sigma'] = 4
         if 'reference_round' not in self.parameters:
             self.parameters['reference_round'] = 0
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         return 2048

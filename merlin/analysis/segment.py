@@ -44,7 +44,7 @@ class WatershedSegment(FeatureSavingAnalysisTask):
     """
     An analysis task that determines the boundaries of features in the
     image data in each field of view using a watershed algorithm.
-    
+
     Since each field of view is analyzed individually, the segmentation results
     should be cleaned in order to merge cells that cross the field of
     view boundary.
@@ -57,9 +57,6 @@ class WatershedSegment(FeatureSavingAnalysisTask):
             self.parameters['seed_channel_name'] = 'DAPI'
         if 'watershed_channel_name' not in self.parameters:
             self.parameters['watershed_channel_name'] = 'polyT'
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         # TODO - refine estimate
@@ -135,9 +132,6 @@ class CleanCellBoundaries(analysistask.ParallelAnalysisTask):
             self.parameters['segment_task'])
         self.alignTask = self.dataSet.load_analysis_task(
             self.parameters['global_align_task'])
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         return 2048
@@ -235,9 +229,6 @@ class RefineCellDatabases(FeatureSavingAnalysisTask):
             self.parameters['segment_task'])
         self.cleaningTask = self.dataSet.load_analysis_task(
             self.parameters['combine_cleaning_task'])
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         # TODO - refine estimate

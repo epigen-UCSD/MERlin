@@ -37,9 +37,6 @@ class FilterBarcodes(AbstractFilterBarcodes):
         if 'distance_threshold' not in self.parameters:
             self.parameters['distance_threshold'] = 1e6
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 1000
 
@@ -77,9 +74,6 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
             self.parameters['tolerance'] = 0.001
         # ensure decode_task is specified
         decodeTask = self.parameters['decode_task']
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         return 5000
@@ -243,10 +237,10 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
         completeFragments = \
             self.dataSet.load_numpy_analysis_result_if_available(
-                'complete_fragments', self, [False]*self.fragment_count())
+                'complete_fragments', self, [False]*len(self.dataSet.get_fovs()))
         pendingFragments = [
-            decodeTask.is_complete(i) and not completeFragments[i]
-            for i in range(self.fragment_count())]
+            decodeTask.is_complete(fragmentName) and not completeFragments[i]
+            for i, fragmentName in enumerate(self.dataSet.get_fovs())]
 
         areaBins = self.dataSet.load_numpy_analysis_result_if_available(
             'area_bins', self, np.arange(1, 35))
@@ -271,15 +265,15 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         while not all(completeFragments):
             if (intensityBins is None or
                     blankCounts is None or codingCounts is None):
-                for i in range(self.fragment_count()):
-                    if not pendingFragments[i] and decodeTask.is_complete(i):
-                        pendingFragments[i] = decodeTask.is_complete(i)
+                for i, fragmentName in enumerate(self.dataSet.get_fovs()):
+                    if not pendingFragments[i] and decodeTask.is_complete(fragmentName):
+                        pendingFragments[i] = decodeTask.is_complete(fragmentName)
 
-                if np.sum(pendingFragments) >= min(20, self.fragment_count()):
+                if np.sum(pendingFragments) >= min(20, len(self.dataSet.get_fovs())):
                     def extreme_values(inputData: pandas.Series):
                         return inputData.min(), inputData.max()
                     sampledFragments = np.random.choice(
-                            [i for i, p in enumerate(pendingFragments) if p],
+                            [self.dataSet.get_fovs()[i] for i, p in enumerate(pendingFragments) if p],
                             size=20)
                     intensityExtremes = [
                         extreme_values(barcodeDB.get_barcodes(
@@ -300,10 +294,10 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
                                             len(areaBins)-1))
 
             else:
-                for i in range(self.fragment_count()):
-                    if not completeFragments[i] and decodeTask.is_complete(i):
+                for i, fragmentName in enumerate(self.dataSet.get_fovs()):
+                    if not completeFragments[i] and decodeTask.is_complete(fragmentName):
                         barcodes = barcodeDB.get_barcodes(
-                            i, columnList=['barcode_id', 'mean_intensity',
+                            fragmentName, columnList=['barcode_id', 'mean_intensity',
                                            'min_distance', 'area'])
                         blankCounts += self._extract_counts(
                             barcodes[barcodes['barcode_id'].isin(
@@ -338,9 +332,6 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
 
         if 'misidentification_rate' not in self.parameters:
             self.parameters['misidentification_rate'] = 0.05
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         return 1000

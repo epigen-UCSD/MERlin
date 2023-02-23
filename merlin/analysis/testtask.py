@@ -46,8 +46,8 @@ class SimpleParallelAnalysisTask(analysistask.ParallelAnalysisTask):
         else:
             return []
 
-    def fragment_count(self):
-        return 5
+    def fragment_list(self):
+        return list(range(5))
 
 
 class RandomNumberParallelAnalysisTask(analysistask.ParallelAnalysisTask):
@@ -78,8 +78,8 @@ class RandomNumberParallelAnalysisTask(analysistask.ParallelAnalysisTask):
         else:
             return []
 
-    def fragment_count(self):
-        return 10
+    def fragment_list(self):
+        return list(range(10))
 
 
 class SimpleInternallyParallelAnalysisTask(
