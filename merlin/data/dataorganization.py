@@ -21,6 +21,12 @@ def _parse_int_list(inputString: str):
     return _parse_list(inputString, dtype=int)
 
 
+def _parse_optional_list(inputString: str):
+    if inputString.strip().startswith("["):
+        return _parse_int_list(inputString)
+    return int(inputString)
+
+
 class InputDataError(Exception):
     pass
 
@@ -49,6 +55,7 @@ class DataOrganization(object):
 
         self._dataSet = dataSet
 
+        converters = {'frame': _parse_int_list, 'zPos': _parse_list, 'fiducialFrame': _parse_optional_list}
         if filePath is not None:
             if not os.path.exists(filePath):
                 filePath = os.sep.join(
@@ -56,7 +63,7 @@ class DataOrganization(object):
 
             self.data = pandas.read_csv(
                 filePath,
-                converters={'frame': _parse_int_list, 'zPos': _parse_list})
+                converters=converters)
             self.data['readoutName'] = self.data['readoutName'].str.strip()
             self._dataSet.save_dataframe_to_csv(
                     self.data, 'dataorganization', index=False)
@@ -64,7 +71,7 @@ class DataOrganization(object):
         else:
             self.data = self._dataSet.load_dataframe_from_csv(
                 'dataorganization',
-                converters={'frame': _parse_int_list, 'zPos': _parse_list})
+                converters=converters)
 
         stringColumns = ['readoutName', 'channelName', 'imageType',
                          'imageRegExp', 'fiducialImageType', 'fiducialRegExp']
@@ -368,8 +375,12 @@ class DataOrganization(object):
                 frames = channelInfo['frame']
 
                 # this assumes fiducials are stored in the same image file
-                requiredFrames = max(np.max(frames),
-                                     channelInfo['fiducialFrame'])
+                if isinstance(channelInfo['fiducialFrame'], np.ndarray):
+                    requiredFrames = max(np.max(frames),
+                                        np.max(channelInfo['fiducialFrame']))
+                else:
+                    requiredFrames = max(np.max(frames),
+                                    channelInfo['fiducialFrame'])
                 if requiredFrames >= imageSize[2]:
                     raise InputDataError(
                         ('Insufficient frames in data for channel {0} and '
