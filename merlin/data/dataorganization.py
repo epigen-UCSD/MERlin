@@ -38,7 +38,7 @@ class DataOrganization(object):
     image files.
     """
 
-    def __init__(self, dataSet, filePath: str = None):
+    def __init__(self, dataSet, filePath: str = None, fovList: str = None):
         """
         Create a new DataOrganization for the data in the specified data set.
 
@@ -76,6 +76,10 @@ class DataOrganization(object):
         stringColumns = ['readoutName', 'channelName', 'imageType',
                          'imageRegExp', 'fiducialImageType', 'fiducialRegExp']
         self.data[stringColumns] = self.data[stringColumns].astype('str')
+        self.fovList = None
+        if fovList:
+            with open(fovList) as f:
+                self.fovList = [fov.strip() for fov in f.readlines()]
         self._map_image_files()
 
     def get_data_channels(self) -> np.array:
@@ -332,6 +336,9 @@ class DataOrganization(object):
             if 'fov' not in self.fileMap:
                 columns = sorted(self.fileMap.filter(like="fov").columns)
                 self.fileMap['fov'] = self.fileMap[columns].agg("_".join, axis=1)
+
+            if self.fovList:
+                self.fileMap = self.fileMap[self.fileMap["fov"].isin(self.fovList)]
 
             self._validate_file_map()
 

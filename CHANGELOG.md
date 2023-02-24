@@ -61,3 +61,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - FOVs can now be identified by arbitrary strings instead of sequential integers.
 - FOVs can be identified by different parts of the filename by matching fov1, fov2, etc. in the data organization file.
 - AlignDAPI3D task added for doing 3D drift correction based on DAPI images.
+- Added a command line option (-f) to provide a file containing a list of FOVs that MERlin will be run on. This allows running on a subset of a dataset.

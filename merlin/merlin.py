@@ -59,6 +59,8 @@ def build_parser():
     parser.add_argument('--no_report',
                         help='flag indicating that the snakemake stats ' +
                         'should not be shared to improve MERlin')
+    parser.add_argument('-f', '--fovs',
+                        help='filename containing list of FOVs to process')
 
     return parser
 
@@ -108,7 +110,8 @@ def merlin():
         microscopeParametersName=_clean_string_arg(args.microscope_parameters),
         positionFileName=_clean_string_arg(args.positions),
         dataHome=_clean_string_arg(args.data_home),
-        analysisHome=_clean_string_arg(args.analysis_home)
+        analysisHome=_clean_string_arg(args.analysis_home),
+        fovList=_clean_string_arg(args.fovs)
     )
 
     parametersHome = m.ANALYSIS_PARAMETERS_HOME

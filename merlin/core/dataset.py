@@ -977,7 +977,7 @@ class MERFISHDataSet(ImageDataSet):
     def __init__(self, dataDirectoryName: str, codebookNames: List[str] = None,
                  dataOrganizationName: str = None, positionFileName: str = None,
                  dataHome: str = None, analysisHome: str = None,
-                 microscopeParametersName: str = None):
+                 microscopeParametersName: str = None, fovList: str = None):
         """Create a MERFISH dataset for the specified raw data.
 
         Args:
@@ -1002,12 +1002,15 @@ class MERFISHDataSet(ImageDataSet):
             microscopeParametersName: the name of the microscope parameters
                     file that specifies properties of the microscope used
                     to acquire the images represented by this ImageDataSet
+            fovList: a filename containing a list of FOV ids (one per line) that
+                    MERlin will be run on. This can be used to process a subset of
+                    the data. If not given, the entire dataset is processed.
         """
         super().__init__(dataDirectoryName, dataHome, analysisHome,
                          microscopeParametersName)
 
         self.dataOrganization = dataorganization.DataOrganization(
-                self, dataOrganizationName)
+                self, dataOrganizationName, fovList)
         if codebookNames:
             self.codebooks = [codebook.Codebook(self, name, i)
                               for i, name in enumerate(codebookNames)]
