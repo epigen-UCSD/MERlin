@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a FiducialBeadWarp task that performs drift correction more robustly than FiducialCorrelationWarp. Only suitable for registration using fiducial beads.
 - Added zarr file format support for raw images.
 - Added option to warp.py tasks to set the imaging round that all rounds are aligned to.
-- Image files can now be organized into sub-folders (e.g. one per hyb round)
-- FOVs can now be identified by arbitrary strings instead of sequential integers
+- Image files can now be organized into sub-folders (e.g. one per hyb round).
+- FOVs can now be identified by arbitrary strings instead of sequential integers.
 - FOVs can be identified by different parts of the filename by matching fov1, fov2, etc. in the data organization file.
+- AlignDAPI3D task added for doing 3D drift correction based on DAPI images.
