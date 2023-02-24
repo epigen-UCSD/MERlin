@@ -1,6 +1,7 @@
 import hashlib
 import numpy as np
 import re
+import os
 import tifffile
 import zarr
 from typing import List
@@ -388,7 +389,13 @@ class ZarrReader(Reader):
     def __init__(self, filename, verbose=False):
         super(ZarrReader, self).__init__(filename, verbose)
 
-        self.zarr = zarr.open(filename, mode='r')
+        dirname = os.path.dirname(filename)
+        fov = os.path.basename(filename).split("_")[-1].split(".")[0]
+        filename_ = os.path.join(dirname, fov, 'data')
+        if os.path.exists(filename_):
+            self.zarr = zarr.open(filename_, mode="r")
+        else:
+            self.zarr = zarr.open(filename, mode='r')
         self.number_frames, self.image_width, self.image_height = self.zarr.shape
 
     def load_frame(self, frame_number):
