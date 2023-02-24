@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed a problem where the randomness in the Optimize task would cause MERlin to refuse to restart on an existing folder after a crash or stop.
 - Removed various warnings printed from deprecated functions, division by zero, etc.
 - Fixed some edge case crashes caused by no decoded barcodes in a FOV.
+- Improved speed of drift correction by processing per imaging round instead of per bit.
 ### Added
 - Added a FiducialBeadWarp task that performs drift correction more robustly than FiducialCorrelationWarp. Only suitable for registration using fiducial beads.
 - Added zarr file format support for raw images.

@@ -86,6 +86,15 @@ class DataOrganization(object):
         """
         return np.array(self.data.index)
 
+    def get_one_channel_per_round(self) -> np.array:
+        """Get a list of data channels such that there is one (arbitrary) channel
+        per imaging round."""
+        channels = self.data.groupby("imagingRound").first().channelName.values
+        return self.data[self.data["channelName"].isin(channels)].index
+
+    def get_imaging_round_for_channel(self, dataChannel: int):
+        return self.data.iloc[dataChannel]['imagingRound']
+
     def get_data_channel_readout_name(self, dataChannelIndex: int) -> str:
         """Get the name for the data channel with the specified index.
 

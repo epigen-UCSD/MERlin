@@ -156,7 +156,7 @@ class Warp(analysistask.ParallelAnalysisTask):
         transformationMatrices = self.dataSet.load_numpy_analysis_result(
             'offsets', self, resultIndex=fov, subdirectory='transformations')
         if dataChannel is not None:
-            return transformationMatrices[dataChannel]
+            return transformationMatrices[self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel)-1]
         else:
             return transformationMatrices
 
@@ -194,18 +194,17 @@ class FiducialCorrelationWarp(Warp):
             highPassSigma, borderType=cv2.BORDER_REPLICATE)
 
     def _run_analysis(self, fragmentIndex: int):
-        # TODO - this can be more efficient since some images should
-        # use the same alignment if they are from the same imaging round
         fixedImage = self._filter(
             self.dataSet.get_fiducial_image(self.parameters['reference_round'], fragmentIndex))
         offsets = [registration.phase_cross_correlation(
             fixedImage,
             self._filter(self.dataSet.get_fiducial_image(x, fragmentIndex)),
             upsample_factor=100)[0] for x in
-                   self.dataSet.get_data_organization().get_data_channels()]
+                   self.dataSet.get_data_organization().get_one_channel_per_round()]
         transformations = [transform.SimilarityTransform(
             translation=[-x[1], -x[0]]) for x in offsets]
         self._process_transformations(transformations, fragmentIndex)
+
 
 class FiducialBeadWarp(Warp):
     """
@@ -351,7 +350,7 @@ class FiducialBeadWarp(Warp):
             self.dataSet.get_fiducial_image(self.parameters['reference_round'], fragmentIndex))
         offsets = []
         im2 = fixedImage.copy()
-        for channel in self.dataSet.get_data_organization().get_data_channels():
+        for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             im_beads = self._filter(self.dataSet.get_fiducial_image(channel, fragmentIndex))
             im1 = im_beads.copy()
             Txyzs = []
@@ -468,7 +467,7 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
             self.get_analysis_name(), resultIndex=fragmentName,
             subdirectory='drifts')
         if dataChannel is not None:
-            return drifts[dataChannel]
+            return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel)-1]
         else:
             return drifts
 
@@ -529,7 +528,7 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
         fixedImage = self.dataSet.get_fiducial_image(self.parameters['reference_round'], fragmentName)
         drifts = []
         tile_drifts = []
-        for channel in self.dataSet.get_data_organization().get_data_channels():
+        for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             movingImage = self.dataSet.get_fiducial_image(channel, fragmentName)
             txyz, txyzs = self.get_txyz(fixedImage, movingImage)
             drifts.append(txyz)
