@@ -282,8 +282,6 @@ class DataOrganization(object):
 
         try:
             self.fileMap = self._dataSet.load_dataframe_from_csv('filemap', dtype={"fov": str})
-            self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
-                self._truncate_file_path)
 
         except FileNotFoundError:
             uniqueEntries = self.data.drop_duplicates(
@@ -322,8 +320,6 @@ class DataOrganization(object):
 
             self.fileMap = pandas.DataFrame(fileData)
             self.fileMap['imagingRound'] = self.fileMap['imagingRound'].astype(int)
-            self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
-                self._truncate_file_path)
             if 'fov' not in self.fileMap:
                 columns = sorted(self.fileMap.filter(like="fov").columns)
                 self.fileMap['fov'] = self.fileMap[columns].agg("_".join, axis=1)
