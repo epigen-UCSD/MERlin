@@ -38,8 +38,8 @@ class SlurmReport(analysistask.AnalysisTask):
     def _generate_slurm_report(self, task: analysistask.AnalysisTask):
         if isinstance(task, analysistask.ParallelAnalysisTask):
             idList = [
-                self.dataSet.get_analysis_environment(task, i)['SLURM_JOB_ID']
-                for i in range(task.fragment_count())]
+                self.dataSet.get_analysis_environment(task, fov)['SLURM_JOB_ID']
+                for fov in task.dataSet.get_fovs()]
         else:
             idList = [
                 self.dataSet.get_analysis_environment(task)['SLURM_JOB_ID']]

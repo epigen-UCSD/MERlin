@@ -62,9 +62,6 @@ class WatershedSegment(FeatureSavingAnalysisTask):
         if 'watershed_channel_name' not in self.parameters:
             self.parameters['watershed_channel_name'] = 'polyT'
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         # TODO - refine estimate
         return 2048
@@ -139,9 +136,6 @@ class CleanCellBoundaries(analysistask.ParallelAnalysisTask):
             self.parameters['segment_task'])
         self.alignTask = self.dataSet.load_analysis_task(
             self.parameters['global_align_task'])
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         return 2048
@@ -239,9 +233,6 @@ class RefineCellDatabases(FeatureSavingAnalysisTask):
             self.parameters['segment_task'])
         self.cleaningTask = self.dataSet.load_analysis_task(
             self.parameters['combine_cleaning_task'])
-
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
 
     def get_estimated_memory(self):
         # TODO - refine estimate

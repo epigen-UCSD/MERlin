@@ -45,11 +45,11 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         else:
             self.parameters['fov_index'] = []
             for i in range(self.parameters['fov_per_iteration']):
-                fovIndex = int(np.random.choice(
-                    list(self.dataSet.get_fovs())))
+                fovIndex = np.random.choice(
+                    list(self.dataSet.get_fovs()))
                 zIndex = int(np.random.choice(
                     list(range(len(self.dataSet.get_z_positions())))))
-                self.parameters['fov_index'].append([fovIndex, zIndex])
+                self.parameters['fov_index'].append(f"{fovIndex}__{zIndex}")
 
     def get_estimated_memory(self):
         return 4000
@@ -64,8 +64,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             dependencies += [self.parameters['previous_iteration']]
         return dependencies
 
-    def fragment_count(self):
-        return self.parameters['fov_per_iteration']
+    def fragment_list(self):
+        return self.parameters['fov_index']
 
     def get_codebook(self) -> Codebook:
         preprocessTask = self.dataSet.load_analysis_task(
@@ -77,7 +77,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                 self.parameters['preprocess_task'])
         codebook = self.get_codebook()
 
-        fovIndex, zIndex = self.parameters['fov_index'][fragmentIndex]
+        fovIndex, zIndex = fragmentIndex.split("__")
+        zIndex = int(zIndex)
 
         scaleFactors = self._get_previous_scale_factors()
         backgrounds = self._get_previous_backgrounds()
@@ -329,14 +330,14 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         except (FileNotFoundError, OSError, ValueError):
             refactors = np.array([self.dataSet.load_numpy_analysis_result(
                     'scale_refactors', self.analysisName, resultIndex=i)
-                for i in range(self.parameters['fov_per_iteration'])])
+                for i in self.fragment_list()])
 
             # Don't rescale bits that were never seen
             refactors[refactors == 0] = 1
 
             previousFactors = np.array([self.dataSet.load_numpy_analysis_result(
                 'previous_scale_factors', self.analysisName, resultIndex=i)
-                for i in range(self.parameters['fov_per_iteration'])])
+                for i in self.fragment_list()])
 
             scaleFactors = np.nanmedian(
                     np.multiply(refactors, previousFactors), axis=0)
@@ -359,16 +360,16 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         except (FileNotFoundError, OSError, ValueError):
             refactors = np.array([self.dataSet.load_numpy_analysis_result(
                     'background_refactors', self.analysisName, resultIndex=i)
-                for i in range(self.parameters['fov_per_iteration'])])
+                for i in self.fragment_list()])
 
             previousBackgrounds = np.array(
                 [self.dataSet.load_numpy_analysis_result(
                     'previous_backgrounds', self.analysisName, resultIndex=i)
-                    for i in range(self.parameters['fov_per_iteration'])])
+                    for i in self.fragment_list()])
 
             previousFactors = np.array([self.dataSet.load_numpy_analysis_result(
                 'previous_scale_factors', self.analysisName, resultIndex=i)
-                for i in range(self.parameters['fov_per_iteration'])])
+                for i in self.fragment_list()])
 
             backgrounds = np.nanmedian(np.add(
                 previousBackgrounds, np.multiply(refactors, previousFactors)),
@@ -407,7 +408,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         """
         countsMean = np.mean([self.dataSet.load_numpy_analysis_result(
             'barcode_counts', self.analysisName, resultIndex=i)
-            for i in range(self.parameters['fov_per_iteration'])], axis=0)
+            for i in self.fragment_list()], axis=0)
 
         if 'previous_iteration' not in self.parameters:
             return np.array([countsMean])

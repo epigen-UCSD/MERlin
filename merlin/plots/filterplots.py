@@ -360,7 +360,7 @@ class FOVSpatialDistributionMetadata(PlotMetadata):
         self.spatialYBins = self._load_numpy_metadata(
             'spatial_y_bins', np.arange(0, self._height, 0.01*self._height))
         self.completeFragments = self._load_numpy_metadata(
-            'complete_fragments', [False]*self.filterTask.fragment_count())
+            'complete_fragments', [False]*len(self.filterTask.fragment_list()))
         self.multiColorCounts = self._load_numpy_metadata(
             'multi_color_radial_counts', np.zeros(len(self.radialBins)-1))
         self.singleColorCounts = self._load_numpy_metadata(
@@ -409,10 +409,10 @@ class FOVSpatialDistributionMetadata(PlotMetadata):
         filterTask = self._taskDict['filter_task']
         codebook = filterTask.get_codebook()
 
-        for i in range(filterTask.fragment_count()):
-            if not self.completeFragments[i] and filterTask.is_complete(i):
+        for i, fragmentName in enumerate(filterTask.dataSet.get_fovs()):
+            if not self.completeFragments[i] and filterTask.is_complete(fragmentName):
                 fovBarcodes = filterTask.get_barcode_database().get_barcodes(
-                    i, columnList=['barcode_id', 'x', 'y'])
+                    fragmentName, columnList=['barcode_id', 'x', 'y'])
 
                 if len(fovBarcodes) > 0:
                     self.spatialCodingCounts += self._spatial_distribution(
@@ -451,7 +451,7 @@ class FilteredBarcodesMetadata(PlotMetadata):
         codebook = filterTask.get_codebook()
 
         self.completeFragments = self._load_numpy_metadata(
-            'complete_fragments', [False]*filterTask.fragment_count())
+            'complete_fragments', [False]*len(filterTask.fragment_list()))
         self.barcodeCounts = self._load_numpy_metadata(
             'barcode_counts', np.zeros(codebook.get_barcode_count()))
 
@@ -459,12 +459,12 @@ class FilteredBarcodesMetadata(PlotMetadata):
         updated = False
         filterTask = self._taskDict['filter_task']
 
-        for i in range(filterTask.fragment_count()):
-            if not self.completeFragments[i] and filterTask.is_complete(i):
+        for i, fragmentName in enumerate(filterTask.dataSet.get_fovs()):
+            if not self.completeFragments[i] and filterTask.is_complete(fragmentName):
                 self.completeFragments[i] = True
 
                 barcodes = filterTask.get_barcode_database().get_barcodes(
-                    i, columnList=['barcode_id'])
+                    fragmentName, columnList=['barcode_id'])
 
                 self.barcodeCounts += np.histogram(
                     barcodes['barcode_id'],
@@ -493,7 +493,7 @@ class GlobalSpatialDistributionMetadata(PlotMetadata):
         codebook = filterTask.get_codebook()
 
         self.completeFragments = self._load_numpy_metadata(
-            'complete_fragments', [False]*filterTask.fragment_count())
+            'complete_fragments', [False]*len(filterTask.fragment_list()))
         self.barcodeCounts = self._load_numpy_metadata(
             'barcode_counts', np.zeros(codebook.get_barcode_count()))
         self.spatialXBins = self._load_numpy_metadata(
@@ -527,12 +527,12 @@ class GlobalSpatialDistributionMetadata(PlotMetadata):
         filterTask = self._taskDict['filter_task']
         codebook = filterTask.get_codebook()
 
-        for i in range(filterTask.fragment_count()):
-            if not self.completeFragments[i] and filterTask.is_complete(i):
+        for i, fragmentName in enumerate(filterTask.dataSet.get_fovs()):
+            if not self.completeFragments[i] and filterTask.is_complete(fragmentName):
                 self.completeFragments[i] = True
 
                 barcodes = filterTask.get_barcode_database().get_barcodes(
-                    i, columnList=['barcode_id', 'global_x', 'global_y'])
+                    fragmentName, columnList=['barcode_id', 'global_x', 'global_y'])
 
                 self.spatialCodingCounts += self._spatial_distribution(
                     barcodes, codebook.get_coding_indexes())

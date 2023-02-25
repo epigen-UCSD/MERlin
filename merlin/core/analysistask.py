@@ -282,7 +282,7 @@ class ParallelAnalysisTask(AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def run(self, fragmentIndex: int=None, overwrite=True) -> None:
+    def run(self, fragmentName: str = None, overwrite=True) -> None:
         """Run the specified index of this analysis task.
 
         If fragment index is not provided. All fragments for this analysis
@@ -292,58 +292,57 @@ class ParallelAnalysisTask(AnalysisTask):
             fragmentIndex: the index of the analysis fragment to run or None
                 if all fragments should be run.
         """
-        if fragmentIndex is None:
-            for i in range(self.fragment_count()):
+        if fragmentName is None:
+            for i in self.fragment_list():
                 self.run(i, overwrite)
         else:
-            logger = self.dataSet.get_logger(self, fragmentIndex)
+            logger = self.dataSet.get_logger(self, fragmentName)
             logger.info(
-                'Beginning %s %i' % (self.get_analysis_name(), fragmentIndex))
+                'Beginning %s %s' % (self.get_analysis_name(), fragmentName))
             try:
-                if self.is_running(fragmentIndex):
+                if self.is_running(fragmentName):
                     raise AnalysisAlreadyStartedException(
-                        ('Unable to run %s fragment %i since it is already ' +
+                        ('Unable to run %s fragment %s since it is already ' +
                          'running')
-                        % (self.analysisName, fragmentIndex))
+                        % (self.analysisName, fragmentName))
 
                 if overwrite:
-                    self._reset_analysis(fragmentIndex)
+                    self._reset_analysis(fragmentName)
 
-                if self.is_complete(fragmentIndex) \
-                        or self.is_error(fragmentIndex):
+                if self.is_complete(fragmentName) \
+                        or self.is_error(fragmentName):
                     raise AnalysisAlreadyStartedException(
-                        'Unable to run %s fragment %i since it has already run'
-                        % (self.analysisName, fragmentIndex))
+                        'Unable to run %s fragment %s since it has already run'
+                        % (self.analysisName, fragmentName))
 
-                self.dataSet.record_analysis_started(self, fragmentIndex)
-                self._indicate_running(fragmentIndex)
-                self._run_analysis(fragmentIndex)
-                self.dataSet.record_analysis_complete(self, fragmentIndex)
-                logger.info('Completed %s %i'
-                            % (self.get_analysis_name(), fragmentIndex))
-                self.dataSet.close_logger(self, fragmentIndex)
+                self.dataSet.record_analysis_started(self, fragmentName)
+                self._indicate_running(fragmentName)
+                self._run_analysis(fragmentName)
+                self.dataSet.record_analysis_complete(self, fragmentName)
+                logger.info('Completed %s %s'
+                            % (self.get_analysis_name(), fragmentName))
+                self.dataSet.close_logger(self, fragmentName)
             except Exception as e:
                 logger.exception(e)
-                self.dataSet.record_analysis_error(self, fragmentIndex)
-                self.dataSet.close_logger(self, fragmentIndex)
+                self.dataSet.record_analysis_error(self, fragmentName)
+                self.dataSet.close_logger(self, fragmentName)
                 raise e
 
-    @abstractmethod
-    def fragment_count(self):
-        pass
+    def fragment_list(self):
+        return self.dataSet.get_fovs()
 
-    def _reset_analysis(self, fragmentIndex: int=None) -> None:
+    def _reset_analysis(self, fragmentName: str = None) -> None:
         """Remove files created by this analysis task and remove markers
         indicating that this analysis has been started, or has completed.
         """
-        if fragmentIndex is None:
-            for i in range(self.fragment_count()):
+        if fragmentName is None:
+            for i in self.fragment_list():
                 self._reset_analysis(i)
 
         else:
-            self.dataSet.reset_analysis_status(self, fragmentIndex)
+            self.dataSet.reset_analysis_status(self, fragmentName)
 
-    def _indicate_running(self, fragmentIndex: int) -> None:
+    def _indicate_running(self, fragmentName: str) -> None:
         """A loop that regularly signals to the dataset that this analysis
         task is still running successfully.
 
@@ -351,37 +350,36 @@ class ParallelAnalysisTask(AnalysisTask):
         minute that this analysis is still running until the analysis
         completes.
         """
-        if self.is_complete(fragmentIndex) or self.is_error(fragmentIndex):
+        if self.is_complete(fragmentName) or self.is_error(fragmentName):
             return
 
-        self.dataSet.record_analysis_running(self, fragmentIndex)
+        self.dataSet.record_analysis_running(self, fragmentName)
         self.runTimer = threading.Timer(
-                30, self._indicate_running, [fragmentIndex])
+                30, self._indicate_running, [fragmentName])
         self.runTimer.daemon = True
         self.runTimer.start()
 
     @abstractmethod
-    def _run_analysis(self, fragmentIndex):
+    def _run_analysis(self, fragmentName):
         pass
 
-    def is_error(self, fragmentIndex=None):
-        if fragmentIndex is None:
-            for i in range(self.fragment_count()):
+    def is_error(self, fragmentName=None):
+        if fragmentName is None:
+            for i in self.fragment_list():
                 if self.is_error(i):
                     return True
 
             return False
-
         else:
-            return self.dataSet.check_analysis_error(self, fragmentIndex)
+            return self.dataSet.check_analysis_error(self, fragmentName)
 
-    def is_complete(self, fragmentIndex=None):
-        if fragmentIndex is None:
+    def is_complete(self, fragmentName=None):
+        if fragmentName is None:
             missingCount = []
             if self.dataSet.check_analysis_done(self):
                 return True
             else:
-                for i in range(self.fragment_count()):
+                for i in self.fragment_list():
                     if not self.is_complete(i):
                         missingCount.append(i)
                 if len(missingCount) > 0:
@@ -390,26 +388,25 @@ class ParallelAnalysisTask(AnalysisTask):
                     self.dataSet.record_analysis_complete(self)
                     return True
         else:
-            return self.dataSet.check_analysis_done(self, fragmentIndex)
+            return self.dataSet.check_analysis_done(self, fragmentName)
 
-    def is_started(self, fragmentIndex=None):
-        if fragmentIndex is None:
-            for i in range(self.fragment_count()):
+    def is_started(self, fragmentName=None):
+        if fragmentName is None:
+            for i in self.fragment_list():
                 if self.is_started(i):
                     return True
 
             return False
-
         else:
-            return self.dataSet.check_analysis_started(self, fragmentIndex)
+            return self.dataSet.check_analysis_started(self, fragmentName)
 
-    def is_running(self, fragmentIndex=None):
-        if not self.is_started(fragmentIndex):
+    def is_running(self, fragmentName=None):
+        if not self.is_started(fragmentName):
             return False
-        if self.is_complete(fragmentIndex):
+        if self.is_complete(fragmentName):
             return False
 
-        return not self.dataSet.is_analysis_idle(self, fragmentIndex)
+        return not self.dataSet.is_analysis_idle(self, fragmentName)
 
     def is_parallel(self):
         return True

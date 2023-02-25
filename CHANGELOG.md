@@ -50,8 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed problems with newer versions of certain packages so that MERlin can now run with the current versions of all packages installed.
 - Fixed an issue we were having with the 3D decoding option.
 - Fixed a problem where the randomness in the Optimize task would cause MERlin to refuse to restart on an existing folder after a crash or stop.
+- Removed various warnings printed from deprecated functions, division by zero, etc.
+- Fixed some edge case crashes caused by no decoded barcodes in a FOV.
+- Improved speed of drift correction by processing per imaging round instead of per bit.
 ### Added
 - Added a FiducialBeadWarp task that performs drift correction more robustly than FiducialCorrelationWarp. Only suitable for registration using fiducial beads.
 - Added zarr file format support for raw images.
 - Added option to warp.py tasks to set the imaging round that all rounds are aligned to.
-- Image files can now be organized into sub-folders (e.g. one per hyb round)
+- Image files can now be organized into sub-folders (e.g. one per hyb round).
+- FOVs can now be identified by arbitrary strings instead of sequential integers.
+- FOVs can be identified by different parts of the filename by matching fov1, fov2, etc. in the data organization file.
+- AlignDAPI3D task added for doing 3D drift correction based on DAPI images.
+- Added a command line option (-f) to provide a file containing a list of FOVs that MERlin will be run on. This allows running on a subset of a dataset.

@@ -70,9 +70,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         self.cropWidth = self.parameters['crop_width']
         self.imageSize = dataSet.get_image_dimensions()
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 2048
 

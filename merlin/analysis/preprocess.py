@@ -61,9 +61,6 @@ class DeconvolutionPreprocess(Preprocess):
         self.warpTask = self.dataSet.load_analysis_task(
             self.parameters['warp_task'])
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 2048
 

@@ -37,9 +37,6 @@ class SumSignal(analysistask.ParallelAnalysisTask):
         self.alignTask = self.dataSet.load_analysis_task(
             self.parameters['global_align_task'])
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
-
     def get_estimated_memory(self):
         return 2048
 

@@ -265,7 +265,7 @@ class LocalFilePortal(FilePortal):
         super().__init__(fileName)
         try:
             self._fileHandle = open(fileName, 'rb')
-        except IsADirectoryError:  # For .zarr files
+        except (IsADirectoryError, PermissionError):  # For .zarr files
             self._fileHandle = None
 
     def get_sibling_with_extension(self, newExtension: str):

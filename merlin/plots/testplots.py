@@ -28,8 +28,8 @@ class TestPlotMetadata(PlotMetadata):
     def __init__(self, analysisTask, taskDict):
         super().__init__(analysisTask, taskDict)
         self.testTask = self._taskDict['test_task']
-        self.completeFragments = [False]*self.testTask.fragment_count()
-        self.meanValues = np.zeros(self.testTask.fragment_count())
+        self.completeFragments = [False]*len(self.testTask.fragment_list())
+        self.meanValues = np.zeros(len(self.testTask.fragment_list()))
 
     def get_mean_values(self) -> np.ndarray:
         return self.meanValues
@@ -37,8 +37,8 @@ class TestPlotMetadata(PlotMetadata):
     def update(self) -> None:
         testTask = self._taskDict['test_task']
 
-        for i in range(testTask.fragment_count()):
-            if not self.completeFragments[i] and testTask.is_complete(i):
+        for i, fragmentName in enumerate(testTask.dataSet.get_fovs()):
+            if not self.completeFragments[i] and testTask.is_complete(fragmentName):
                 self.meanValues[i] = np.mean(self.testTask.get_random_result(i))
                 self.completeFragments[i] = True
 

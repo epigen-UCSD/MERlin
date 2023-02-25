@@ -1,5 +1,6 @@
 import os
 import re
+import csv
 from typing import List
 from typing import Tuple
 import pandas
@@ -20,6 +21,12 @@ def _parse_int_list(inputString: str):
     return _parse_list(inputString, dtype=int)
 
 
+def _parse_optional_list(inputString: str):
+    if inputString.strip().startswith("["):
+        return _parse_int_list(inputString)
+    return int(inputString)
+
+
 class InputDataError(Exception):
     pass
 
@@ -31,7 +38,7 @@ class DataOrganization(object):
     image files.
     """
 
-    def __init__(self, dataSet, filePath: str = None):
+    def __init__(self, dataSet, filePath: str = None, fovList: str = None):
         """
         Create a new DataOrganization for the data in the specified data set.
 
@@ -48,6 +55,7 @@ class DataOrganization(object):
 
         self._dataSet = dataSet
 
+        converters = {'frame': _parse_int_list, 'zPos': _parse_list, 'fiducialFrame': _parse_optional_list}
         if filePath is not None:
             if not os.path.exists(filePath):
                 filePath = os.sep.join(
@@ -55,7 +63,7 @@ class DataOrganization(object):
 
             self.data = pandas.read_csv(
                 filePath,
-                converters={'frame': _parse_int_list, 'zPos': _parse_list})
+                converters=converters)
             self.data['readoutName'] = self.data['readoutName'].str.strip()
             self._dataSet.save_dataframe_to_csv(
                     self.data, 'dataorganization', index=False)
@@ -63,11 +71,15 @@ class DataOrganization(object):
         else:
             self.data = self._dataSet.load_dataframe_from_csv(
                 'dataorganization',
-                converters={'frame': _parse_int_list, 'zPos': _parse_list})
+                converters=converters)
 
         stringColumns = ['readoutName', 'channelName', 'imageType',
                          'imageRegExp', 'fiducialImageType', 'fiducialRegExp']
         self.data[stringColumns] = self.data[stringColumns].astype('str')
+        self.fovList = None
+        if fovList:
+            with open(fovList) as f:
+                self.fovList = [fov.strip() for fov in f.readlines()]
         self._map_image_files()
 
     def get_data_channels(self) -> np.array:
@@ -77,6 +89,15 @@ class DataOrganization(object):
             A list of the data channel indexes
         """
         return np.array(self.data.index)
+
+    def get_one_channel_per_round(self) -> np.array:
+        """Get a list of data channels such that there is one (arbitrary) channel
+        per imaging round."""
+        channels = self.data.groupby("imagingRound").first().channelName.values
+        return self.data[self.data["channelName"].isin(channels)].index
+
+    def get_imaging_round_for_channel(self, dataChannel: int):
+        return self.data.iloc[dataChannel]['imagingRound']
 
     def get_data_channel_readout_name(self, dataChannelIndex: int) -> str:
         """Get the name for the data channel with the specified index.
@@ -148,7 +169,7 @@ class DataOrganization(object):
         return self.data[self.data['channelName'] ==
                          channelName].index.values.item()
 
-    def get_fiducial_filename(self, dataChannel: int, fov: int) -> str:
+    def get_fiducial_filename(self, dataChannel: int, fov: str) -> str:
         """Get the path for the image file that contains the fiducial
         image for the specified dataChannel and fov.
 
@@ -175,7 +196,7 @@ class DataOrganization(object):
         """
         return self.data.iloc[dataChannel]['fiducialFrame']
 
-    def get_image_filename(self, dataChannel: int, fov: int) -> str:
+    def get_image_filename(self, dataChannel: int, fov: str) -> str:
         """Get the path for the image file that contains the
         images for the specified dataChannel and fov.
 
@@ -251,9 +272,13 @@ class DataOrganization(object):
         return sequentialChannels, sequentialGeneNames
 
     def _get_image_path(
-            self, imageType: str, fov: int, imagingRound: int) -> str:
+            self, imageType: str, fov: str, imagingRound: int) -> str:
         selection = self.fileMap[(self.fileMap['imageType'] == imageType) &
                                  (self.fileMap['fov'] == fov) &
+                                 (self.fileMap['imagingRound'] == imagingRound)]
+        if selection.empty:
+            selection = self.fileMap[(self.fileMap['imageType'] == imageType) &
+                                 (self.fileMap['fov'].astype(int) == int(fov)) &
                                  (self.fileMap['imagingRound'] == imagingRound)]
         filemapPath = selection['imagePath'].values[0]
         return os.path.join(self._dataSet.dataHome, self._dataSet.dataSetName,
@@ -269,9 +294,7 @@ class DataOrganization(object):
         # standard image types.
 
         try:
-            self.fileMap = self._dataSet.load_dataframe_from_csv('filemap')
-            self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
-                self._truncate_file_path)
+            self.fileMap = self._dataSet.load_dataframe_from_csv('filemap', dtype={"fov": str})
 
         except FileNotFoundError:
             uniqueEntries = self.data.drop_duplicates(
@@ -309,15 +332,18 @@ class DataOrganization(object):
                            currentType))
 
             self.fileMap = pandas.DataFrame(fileData)
-            self.fileMap[['imagingRound', 'fov']] = \
-                self.fileMap[['imagingRound', 'fov']].astype(int)
-            self.fileMap['imagePath'] = self.fileMap['imagePath'].apply(
-                self._truncate_file_path)
+            self.fileMap['imagingRound'] = self.fileMap['imagingRound'].astype(int)
+            if 'fov' not in self.fileMap:
+                columns = sorted(self.fileMap.filter(like="fov").columns)
+                self.fileMap['fov'] = self.fileMap[columns].agg("_".join, axis=1)
+
+            if self.fovList:
+                self.fileMap = self.fileMap[self.fileMap["fov"].isin(self.fovList)]
 
             self._validate_file_map()
 
             self._dataSet.save_dataframe_to_csv(
-                    self.fileMap, 'filemap', index=False)
+                    self.fileMap, 'filemap', index=False, quoting=csv.QUOTE_NONNUMERIC)
 
     def _validate_file_map(self) -> None:
         """
@@ -361,8 +387,12 @@ class DataOrganization(object):
                 frames = channelInfo['frame']
 
                 # this assumes fiducials are stored in the same image file
-                requiredFrames = max(np.max(frames),
-                                     channelInfo['fiducialFrame'])
+                if isinstance(channelInfo['fiducialFrame'], np.ndarray):
+                    requiredFrames = max(np.max(frames),
+                                        np.max(channelInfo['fiducialFrame']))
+                else:
+                    requiredFrames = max(np.max(frames),
+                                    channelInfo['fiducialFrame'])
                 if requiredFrames >= imageSize[2]:
                     raise InputDataError(
                         ('Insufficient frames in data for channel {0} and '

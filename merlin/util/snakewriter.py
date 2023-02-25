@@ -19,10 +19,9 @@ class SnakemakeRule(object):
     def _clean_string(stringIn):
         return stringIn.replace('\\', '/')
 
-    def _expand_as_string(self, taskName, indexCount) -> str:
-        return 'expand(%s, g=list(range(%i)))' % (self._add_quotes(
-            self._analysisTask.dataSet.analysis_done_filename(taskName, '{g}')),
-            indexCount)
+    def _expand_as_string(self, taskName, fragments) -> str:
+        filename = self._add_quotes(self._analysisTask.dataSet.analysis_done_filename(taskName, '{g}'))
+        return f'expand({filename}, g={list(fragments)})'
 
     def _generate_output(self) -> str:
         if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
@@ -103,7 +102,7 @@ class SnakemakeRule(object):
                 % (self._analysisTask.get_analysis_name() + 'Done',
                    self._clean_string(self._expand_as_string(
                        self._analysisTask,
-                       self._analysisTask.fragment_count())),
+                       self._analysisTask.fragment_list())),
                    self._add_quotes(self._clean_string(
                        self._analysisTask.dataSet.analysis_done_filename(
                            self._analysisTask))),
@@ -116,7 +115,7 @@ class SnakemakeRule(object):
         if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
             return self._clean_string(self._expand_as_string(
                 self._analysisTask.get_analysis_name(),
-                self._analysisTask.fragment_count()))
+                self._analysisTask.fragment_list()))
         else:
             return self._clean_string(
                 self._add_quotes(

@@ -704,20 +704,20 @@ class DataSet(object):
         return os.sep.join([self.get_log_subdirectory(analysisTask), logName])
 
     def _analysis_status_file(self, analysisTask: analysistask.AnalysisTask,
-                              eventName: str, fragmentIndex: int = None) -> str:
+                              eventName: str, fragmentName: str = None) -> str:
         if isinstance(analysisTask, str):
             analysisTask = self.load_analysis_task(analysisTask)
 
-        if fragmentIndex is None:
+        if fragmentName is None:
             fileName = analysisTask.get_analysis_name() + '.' + eventName
         else:
             fileName = analysisTask.get_analysis_name() + \
-                    '_' + str(fragmentIndex) + '.' + eventName
+                    '_' + str(fragmentName) + '.' + eventName
         return os.sep.join([self.get_task_subdirectory(analysisTask),
                 fileName])
 
     def get_analysis_environment(self, analysisTask: analysistask.AnalysisTask,
-                                 fragmentIndex: int = None) -> None:
+                                 fragmentName: str = None) -> None:
         """Get the environment variables for the system used to run the
         specified analysis task.
 
@@ -730,11 +730,11 @@ class DataSet(object):
         Returns: A dictionary of the environment variables. If the job has not
             yet run, then None is returned.
         """
-        if not self.check_analysis_done(analysisTask, fragmentIndex):
+        if not self.check_analysis_done(analysisTask, fragmentName):
             return None
 
         fileName = self._analysis_status_file(
-            analysisTask, 'environment', fragmentIndex)
+            analysisTask, 'environment', fragmentName)
         with open(fileName, 'r') as inFile:
             envDict = json.load(inFile)
         return envDict
@@ -977,7 +977,7 @@ class MERFISHDataSet(ImageDataSet):
     def __init__(self, dataDirectoryName: str, codebookNames: List[str] = None,
                  dataOrganizationName: str = None, positionFileName: str = None,
                  dataHome: str = None, analysisHome: str = None,
-                 microscopeParametersName: str = None):
+                 microscopeParametersName: str = None, fovList: str = None):
         """Create a MERFISH dataset for the specified raw data.
 
         Args:
@@ -1002,12 +1002,15 @@ class MERFISHDataSet(ImageDataSet):
             microscopeParametersName: the name of the microscope parameters
                     file that specifies properties of the microscope used
                     to acquire the images represented by this ImageDataSet
+            fovList: a filename containing a list of FOV ids (one per line) that
+                    MERlin will be run on. This can be used to process a subset of
+                    the data. If not given, the entire dataset is processed.
         """
         super().__init__(dataDirectoryName, dataHome, analysisHome,
                          microscopeParametersName)
 
         self.dataOrganization = dataorganization.DataOrganization(
-                self, dataOrganizationName)
+                self, dataOrganizationName, fovList)
         if codebookNames:
             self.codebooks = [codebook.Codebook(self, name, i)
                               for i, name in enumerate(codebookNames)]
@@ -1175,9 +1178,16 @@ class MERFISHDataSet(ImageDataSet):
                     dataChannel, zPosition))
 
     def get_fiducial_image(self, dataChannel, fov):
+        index = self.dataOrganization.get_fiducial_frame_index(dataChannel)
+        if isinstance(index, np.ndarray):
+            return np.array([
+                self.load_image(
+                self.dataOrganization.get_fiducial_filename(dataChannel, fov),
+                i) for i in index
+            ])
         return self.load_image(
                 self.dataOrganization.get_fiducial_filename(dataChannel, fov),
-                self.dataOrganization.get_fiducial_frame_index(dataChannel))
+                index)
 
     def _import_positions_from_metadata(self):
         positionData = []
@@ -1197,6 +1207,7 @@ class MERFISHDataSet(ImageDataSet):
             self._import_positions_from_metadata()
         self.positions = pandas.read_csv(
             positionPath, header=None, names=['X', 'Y'])
+        self.positions.index = self.get_fovs()
 
     def _import_positions(self, positionFileName):
         sourcePath = os.sep.join([merlin.POSITION_HOME, positionFileName])

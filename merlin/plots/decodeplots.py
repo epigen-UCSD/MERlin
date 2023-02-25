@@ -164,7 +164,7 @@ class AreaIntensityViolinPlot(AbstractPlot):
                         'min': 0,
                         'max': 0}
 
-        vpstats = [distribution_dict(x) for x in 
+        vpstats = [distribution_dict(x) for x in
                    decodeMetadata.intensityCountsByArea]
 
         fig = plt.figure(figsize=(15, 5))
@@ -198,7 +198,7 @@ class DecodedBarcodesMetadata(PlotMetadata):
         codebook = self.decodeTask.get_codebook()
 
         self.completeFragments = self._load_numpy_metadata(
-            'complete_fragments', [False]*self.decodeTask.fragment_count())
+            'complete_fragments', [False]*len(self.decodeTask.fragment_list()))
         self.areaBins = np.arange(25)
         self.areaCounts = self._load_numpy_metadata(
             'area_counts', np.zeros(len(self.areaBins)-1))
@@ -206,7 +206,7 @@ class DecodedBarcodesMetadata(PlotMetadata):
         self.barcodeCounts = self._load_numpy_metadata(
             'barcode_counts', np.zeros(codebook.get_barcode_count()))
         if np.sum(self.completeFragments) >= min(
-                20, self.decodeTask.fragment_count()):
+                20, len(self.decodeTask.fragment_list())):
             self.intensityBins = self._load_numpy_metadata('intensity_bins')
             self.intensityCounts = self._load_numpy_metadata(
                 'intensity_counts', np.zeros(len(self.intensityBins)-1))
@@ -263,18 +263,18 @@ class DecodedBarcodesMetadata(PlotMetadata):
         updated = False
         decodeTask = self._taskDict['decode_task']
 
-        for i in range(decodeTask.fragment_count()):
-            if not self.completeFragments[i] and decodeTask.is_complete(i):
+        for i, fragmentName in enumerate(decodeTask.dataSet.get_fovs()):
+            if not self.completeFragments[i] and decodeTask.is_complete(fragmentName):
                 self.completeFragments[i] = True
 
                 self.queuedBarcodeData.append(
                     decodeTask.get_barcode_database().get_barcodes(
-                        i,
+                        fragmentName,
                         columnList=['barcode_id', 'area', 'mean_intensity',
                                     'min_distance']))
 
                 if np.sum(self.completeFragments) \
-                        >= min(20, decodeTask.fragment_count()):
+                        >= min(20, len(decodeTask.fragment_list())):
                     if not self.binsDetermined:
                         self._determine_bins()
 
