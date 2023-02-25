@@ -121,8 +121,8 @@ def test_write_and_read_one_fov(barcode_db):
     readBarcodes = barcode_db.get_barcodes()[barcodesToWrite.columns]
     print(barcodesToWrite.to_string())
     print(readBarcodes.to_string())
-    assert np.isclose(barcodesToWrite.values.astype(np.float), 
-                      readBarcodes.values.astype(np.float)).all()
+    assert np.isclose(barcodesToWrite.values.astype(np.float32),
+                      readBarcodes.values.astype(np.float32)).all()
     barcode_db.empty_database(fov=0)
     assert len(barcode_db.get_barcodes()) == 0
 
@@ -137,8 +137,8 @@ def test_write_and_read_one_fov_many_barcodes(barcode_db):
 
     print(barcodesToWrite.head())
     print(readBarcodes.head())
-    assert np.isclose(barcodesToWrite.values.astype(np.float), 
-                      readBarcodes.values.astype(np.float)).all()
+    assert np.isclose(barcodesToWrite.values.astype(np.float32),
+                      readBarcodes.values.astype(np.float32)).all()
     barcode_db.empty_database(fov=0)
     assert len(barcode_db.get_barcodes()) == 0
 
@@ -160,8 +160,8 @@ def test_multiple_write_one_fov(barcode_db):
     readBarcodes.sort_values(by=list(readBarcodes.columns)[1:], inplace=True)
     combinedBarcodes.sort_values(
             by=list(combinedBarcodes.columns)[1:], inplace=True)
-    assert np.isclose(readBarcodes.values.astype(np.float), 
-                      combinedBarcodes.values.astype(np.float)).all()
+    assert np.isclose(readBarcodes.values.astype(np.float32),
+                      combinedBarcodes.values.astype(np.float32)).all()
     barcode_db.empty_database(fov=0)
     assert len(barcode_db.get_barcodes()) == 0
 
@@ -178,8 +178,8 @@ def test_write_and_read_multiple_fov(barcode_db):
     readBarcodes.sort_values(by=list(readBarcodes.columns)[1:], inplace=True)
     combinedBarcodes.sort_values(
             by=list(combinedBarcodes.columns)[1:], inplace=True)
-    assert np.isclose(readBarcodes.values.astype(np.float), 
-                      combinedBarcodes.values.astype(np.float)).all()
+    assert np.isclose(readBarcodes.values.astype(np.float32),
+                      combinedBarcodes.values.astype(np.float32)).all()
     barcode_db.empty_database()
     assert len(barcode_db.get_barcodes()) == 0
 
@@ -189,7 +189,7 @@ def test_read_select_columns(barcode_db_with_barcodes):
     readBarcodes = barcode_db_with_barcodes[0].get_barcodes(
             columnList=['mean_intensity', 'x', 'intensity_0'])
     assert np.isclose(
-            barcodesInDB[['mean_intensity', 'x', 'intensity_0']].values, 
+            barcodesInDB[['mean_intensity', 'x', 'intensity_0']].values,
             readBarcodes[['mean_intensity', 'x', 'intensity_0']].values).all()
 
 
@@ -203,7 +203,7 @@ def test_read_filtered_barcodes(barcode_db_with_barcodes):
                     (barcodesInDB['area'] >= area) &
                     (barcodesInDB['mean_intensity'] >= intensity)]
             assert len(readBarcodes) == len(selectBarcodes)
-            if len(readBarcodes) > 0: 
+            if len(readBarcodes) > 0:
                 readBarcodes.sort_values(
                         by=list(readBarcodes.columns)[1:], inplace=True)
                 selectBarcodes = selectBarcodes.sort_values(
