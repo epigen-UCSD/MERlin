@@ -449,15 +449,19 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
             a 2-dimensional numpy array containing the specified image
         """
         zdrift, xdrift, ydrift = self.get_transformation(fov, dataChannel)
-        inputImage = self.dataSet.get_raw_image(
-            dataChannel, fov, self.dataSet.z_index_to_position(zIndex-zdrift))
-        if chromaticCorrector is not None:
-            imageColor = self.dataSet.get_data_organization()\
-                            .get_data_channel_color(dataChannel)
-            inputImage = chromaticCorrector.transform_image(
-                inputImage, imageColor).astype(inputImage.dtype)
+        try:
+            inputImage = self.dataSet.get_raw_image(
+                dataChannel, fov, self.dataSet.z_index_to_position(zIndex-zdrift))
+            if chromaticCorrector is not None:
+                imageColor = self.dataSet.get_data_organization()\
+                                .get_data_channel_color(dataChannel)
+                inputImage = chromaticCorrector.transform_image(
+                    inputImage, imageColor).astype(inputImage.dtype)
 
-        return ndimage.shift(inputImage, [-xdrift, -ydrift], order=0)
+            return ndimage.shift(inputImage, [-xdrift, -ydrift], order=0)
+        except IndexError:
+            inputImage = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(inputImage)
 
     def get_transformation(self, fragmentName: str, dataChannel: int = None):
         """Get the transformations for aligning images for the specified field
