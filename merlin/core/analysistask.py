@@ -52,25 +52,27 @@ class AnalysisTask(ABC):
         else:
             self.analysisName = analysisName
 
-        if 'merlin_version' not in self.parameters:
-            self.parameters['merlin_version'] = merlin.version()
+        if "merlin_version" not in self.parameters:
+            self.parameters["merlin_version"] = merlin.version()
         else:
-            if not merlin.is_compatible(self.parameters['merlin_version']):
+            if not merlin.is_compatible(self.parameters["merlin_version"]):
                 raise merlin.IncompatibleVersionException(
-                    ('Analysis task %s has already been created by MERlin ' +
-                     'version %s, which is incompatible with the current ' +
-                     'MERlin version, %s')
-                    % (self.analysisName, self.parameters['merlin_version'],
-                       merlin.version()))
+                    (
+                        "Analysis task %s has already been created by MERlin "
+                        + "version %s, which is incompatible with the current "
+                        + "MERlin version, %s"
+                    )
+                    % (self.analysisName, self.parameters["merlin_version"], merlin.version())
+                )
 
-        self.parameters['module'] = type(self).__module__
-        self.parameters['class'] = type(self).__name__
+        self.parameters["module"] = type(self).__module__
+        self.parameters["class"] = type(self).__name__
 
-        if 'codebookNum' in self.parameters:
-            self.codebookNum = self.parameters['codebookNum']
+        if "codebookNum" in self.parameters:
+            self.codebookNum = self.parameters["codebookNum"]
 
-        if 'profile' not in self.parameters:
-            self.parameters['profile'] = False
+        if "profile" not in self.parameters:
+            self.parameters["profile"] = False
 
     def save(self, overwrite=False) -> None:
         """Save a copy of this AnalysisTask into the data set.
@@ -101,21 +103,19 @@ class AnalysisTask(ABC):
                 task has already completed or exited with an error.
         """
         logger = self.dataSet.get_logger(self)
-        logger.info('Beginning ' + self.get_analysis_name())
+        logger.info("Beginning " + self.get_analysis_name())
 
         try:
             if self.is_running():
                 raise AnalysisAlreadyStartedException(
-                    'Unable to run %s since it is already running'
-                    % self.analysisName)
+                    "Unable to run %s since it is already running" % self.analysisName
+                )
 
             if overwrite:
                 self._reset_analysis()
 
             if self.is_complete() or self.is_error():
-                raise AnalysisAlreadyStartedException(
-                    'Unable to run %s since it has already run'
-                    % self.analysisName)
+                raise AnalysisAlreadyStartedException("Unable to run %s since it has already run" % self.analysisName)
 
             self.dataSet.record_analysis_started(self)
             self._indicate_running()
@@ -132,7 +132,7 @@ class AnalysisTask(ABC):
             else:
                 self._run_analysis()
             self.dataSet.record_analysis_complete(self)
-            logger.info('Completed ' + self.get_analysis_name())
+            logger.info("Completed " + self.get_analysis_name())
             self.dataSet.close_logger(self)
         except Exception as e:
             logger.exception(e)
@@ -314,23 +314,21 @@ class ParallelAnalysisTask(AnalysisTask):
                 self.run(i, overwrite)
         else:
             logger = self.dataSet.get_logger(self, fragmentName)
-            logger.info(
-                'Beginning %s %s' % (self.get_analysis_name(), fragmentName))
+            logger.info("Beginning %s %s" % (self.get_analysis_name(), fragmentName))
             try:
                 if self.is_running(fragmentName):
                     raise AnalysisAlreadyStartedException(
-                        ('Unable to run %s fragment %s since it is already ' +
-                         'running')
-                        % (self.analysisName, fragmentName))
+                        ("Unable to run %s fragment %s since it is already " + "running")
+                        % (self.analysisName, fragmentName)
+                    )
 
                 if overwrite:
                     self._reset_analysis(fragmentName)
 
-                if self.is_complete(fragmentName) \
-                        or self.is_error(fragmentName):
+                if self.is_complete(fragmentName) or self.is_error(fragmentName):
                     raise AnalysisAlreadyStartedException(
-                        'Unable to run %s fragment %s since it has already run'
-                        % (self.analysisName, fragmentName))
+                        "Unable to run %s fragment %s since it has already run" % (self.analysisName, fragmentName)
+                    )
 
                 self.dataSet.record_analysis_started(self, fragmentName)
                 self._indicate_running(fragmentName)
@@ -347,8 +345,7 @@ class ParallelAnalysisTask(AnalysisTask):
                 else:
                     self._run_analysis(fragmentName)
                 self.dataSet.record_analysis_complete(self, fragmentName)
-                logger.info('Completed %s %s'
-                            % (self.get_analysis_name(), fragmentName))
+                logger.info("Completed %s %s" % (self.get_analysis_name(), fragmentName))
                 self.dataSet.close_logger(self, fragmentName)
             except Exception as e:
                 logger.exception(e)
@@ -382,8 +379,7 @@ class ParallelAnalysisTask(AnalysisTask):
             return
 
         self.dataSet.record_analysis_running(self, fragmentName)
-        self.runTimer = threading.Timer(
-                30, self._indicate_running, [fragmentName])
+        self.runTimer = threading.Timer(30, self._indicate_running, [fragmentName])
         self.runTimer.daemon = True
         self.runTimer.start()
 

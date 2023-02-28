@@ -36,9 +36,7 @@ class DataFormatException(Exception):
 
 
 class DataSet(object):
-
-    def __init__(self, dataDirectoryName: str,
-                 dataHome: str = None, analysisHome: str = None):
+    def __init__(self, dataDirectoryName: str, dataHome: str = None, analysisHome: str = None):
         """Create a dataset for the specified raw data.
 
         Args:
@@ -62,42 +60,42 @@ class DataSet(object):
         self.analysisHome = analysisHome
 
         self.rawDataPath = os.sep.join([dataHome, dataDirectoryName])
-        self.rawDataPortal = dataportal.DataPortal.create_portal(
-            self.rawDataPath)
+        self.rawDataPortal = dataportal.DataPortal.create_portal(self.rawDataPath)
         if not self.rawDataPortal.is_available():
-            print('The raw data is not available at %s'.format(
-                self.rawDataPath))
+            print("The raw data is not available at %s".format(self.rawDataPath))
 
         self.analysisPath = os.sep.join([analysisHome, dataDirectoryName])
         os.makedirs(self.analysisPath, exist_ok=True)
 
-        self.logPath = os.sep.join([self.analysisPath, 'logs'])
+        self.logPath = os.sep.join([self.analysisPath, "logs"])
         os.makedirs(self.logPath, exist_ok=True)
 
         self._store_dataset_metadata()
 
     def _store_dataset_metadata(self) -> None:
         try:
-            oldMetadata = self.load_json_analysis_result('dataset', None)
-            if not merlin.is_compatible(oldMetadata['merlin_version']):
+            oldMetadata = self.load_json_analysis_result("dataset", None)
+            if not merlin.is_compatible(oldMetadata["merlin_version"]):
                 raise merlin.IncompatibleVersionException(
-                    ('Analysis was performed on dataset %s with MERlin '
-                     + 'version %s, which is not compatible with the current '
-                     + 'MERlin version %s')
-                    % (self.dataSetName, oldMetadata['version'],
-                       merlin.version()))
+                    (
+                        "Analysis was performed on dataset %s with MERlin "
+                        + "version %s, which is not compatible with the current "
+                        + "MERlin version %s"
+                    )
+                    % (self.dataSetName, oldMetadata["version"], merlin.version())
+                )
         except FileNotFoundError:
             newMetadata = {
-                'merlin_version': merlin.version(),
-                'module': type(self).__module__,
-                'class': type(self).__name__,
-                'dataset_name': self.dataSetName,
-                'creation_date': str(datetime.datetime.now())
+                "merlin_version": merlin.version(),
+                "module": type(self).__module__,
+                "class": type(self).__name__,
+                "dataset_name": self.dataSetName,
+                "creation_date": str(datetime.datetime.now()),
             }
-            self.save_json_analysis_result(newMetadata, 'dataset', None)
+            self.save_json_analysis_result(newMetadata, "dataset", None)
 
     def save_workflow(self, workflowString: str) -> str:
-        """ Save a snakemake workflow for analysis of this dataset.
+        """Save a snakemake workflow for analysis of this dataset.
 
         Args:
             workflowString: a string containing the snakemake workflow
@@ -108,10 +106,8 @@ class DataSet(object):
         snakemakePath = self.get_snakemake_path()
         os.makedirs(snakemakePath, exist_ok=True)
 
-        workflowPath = os.sep.join(
-            [snakemakePath, datetime.datetime.now().strftime('%y%m%d_%H%M%S')])\
-            + '.Snakefile'
-        with open(workflowPath, 'w') as outFile:
+        workflowPath = os.sep.join([snakemakePath, datetime.datetime.now().strftime("%y%m%d_%H%M%S")]) + ".Snakefile"
+        with open(workflowPath, "w") as outFile:
             outFile.write(workflowString)
 
         return workflowPath
@@ -121,10 +117,11 @@ class DataSet(object):
 
         Returns: the snakemake path as a string
         """
-        return os.sep.join([self.analysisPath, 'snakemake'])
+        return os.sep.join([self.analysisPath, "snakemake"])
 
-    def save_figure(self, analysisTask: TaskOrName, figure: plt.Figure,
-                    figureName: str, subdirectory: str = 'figures') -> None:
+    def save_figure(
+        self, analysisTask: TaskOrName, figure: plt.Figure, figureName: str, subdirectory: str = "figures"
+    ) -> None:
         """Save the figure into the analysis results for this DataSet
 
         This function will save the figure in both png and pdf formats.
@@ -137,15 +134,12 @@ class DataSet(object):
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
         """
-        savePath = os.sep.join(
-                [self.get_analysis_subdirectory(analysisTask, subdirectory),
-                    figureName])
+        savePath = os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), figureName])
 
-        figure.savefig(savePath + '.png', pad_inches=0)
-        figure.savefig(savePath + '.pdf', transparent=True, pad_inches=0)
+        figure.savefig(savePath + ".png", pad_inches=0)
+        figure.savefig(savePath + ".pdf", transparent=True, pad_inches=0)
 
-    def figure_exists(self, analysisTask: TaskOrName, figureName: str,
-                      subdirectory: str = 'figures') -> bool:
+    def figure_exists(self, analysisTask: TaskOrName, figureName: str, subdirectory: str = "figures") -> bool:
         """Determine if a figure with the specified name has been
         saved within the results for the specified analysis task.
 
@@ -158,15 +152,13 @@ class DataSet(object):
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
         """
-        savePath = os.sep.join(
-            [self.get_analysis_subdirectory(analysisTask, subdirectory),
-             figureName]) + '.png'
+        savePath = os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), figureName]) + ".png"
 
         return os.path.exists(savePath)
 
     def get_analysis_image_set(
-            self, analysisTask: TaskOrName, imageBaseName: str,
-            imageIndex: int = None) -> np.ndarray:
+        self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int = None
+    ) -> np.ndarray:
         """Get an analysis image set saved in the analysis for this data set.
 
         Args:
@@ -175,13 +167,17 @@ class DataSet(object):
             imageBaseName: the base name of the image
             imageIndex: index of the image set to retrieve
         """
-        return tifffile.imread(self._analysis_image_name(
-            analysisTask, imageBaseName, imageIndex))
+        return tifffile.imread(self._analysis_image_name(analysisTask, imageBaseName, imageIndex))
 
     def get_analysis_image(
-            self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int,
-            imagesPerSlice: int, sliceIndex: int,
-            frameIndex: int) -> np.ndarray:
+        self,
+        analysisTask: TaskOrName,
+        imageBaseName: str,
+        imageIndex: int,
+        imagesPerSlice: int,
+        sliceIndex: int,
+        frameIndex: int,
+    ) -> np.ndarray:
         """Get an image from an image set save in the analysis for this
         data set.
 
@@ -197,14 +193,13 @@ class DataSet(object):
         """
         # TODO - It may be useful to add a function that gets all
         # frames in a slice
-        imageFile = tifffile.TiffFile(self._analysis_image_name(
-            analysisTask, imageBaseName, imageIndex))
-        indexInFile = sliceIndex*imagesPerSlice + frameIndex
+        imageFile = tifffile.TiffFile(self._analysis_image_name(analysisTask, imageBaseName, imageIndex))
+        indexInFile = sliceIndex * imagesPerSlice + frameIndex
         return imageFile.asarray(key=int(indexInFile))
 
     def writer_for_analysis_images(
-            self, analysisTask: TaskOrName, imageBaseName: str,
-            imageIndex: int = None, imagej: bool = False) -> tifffile.TiffWriter:
+        self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int = None, imagej: bool = False
+    ) -> tifffile.TiffWriter:
         """Get a writer for writing tiff files from an analysis task.
 
         Args:
@@ -215,51 +210,52 @@ class DataSet(object):
         Returns:
 
         """
-        return tifffile.TiffWriter(self._analysis_image_name(
-            analysisTask, imageBaseName, imageIndex), imagej=imagej)
+        return tifffile.TiffWriter(self._analysis_image_name(analysisTask, imageBaseName, imageIndex), imagej=imagej)
 
     @staticmethod
     def analysis_tiff_description(sliceCount: int, frameCount: int) -> Dict:
-        imageDescription = {'ImageJ': '1.47a\n',
-                            'images': sliceCount*frameCount,
-                            'channels': 1,
-                            'slices': sliceCount,
-                            'frames': frameCount,
-                            'hyperstack': True,
-                            'loop': False}
+        imageDescription = {
+            "ImageJ": "1.47a\n",
+            "images": sliceCount * frameCount,
+            "channels": 1,
+            "slices": sliceCount,
+            "frames": frameCount,
+            "hyperstack": True,
+            "loop": False,
+        }
         return imageDescription
 
-    def _analysis_image_name(self, analysisTask: TaskOrName,
-                             imageBaseName: str, imageIndex: int) -> str:
-        destPath = self.get_analysis_subdirectory(
-                analysisTask, subdirectory='images')
+    def _analysis_image_name(self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int) -> str:
+        destPath = self.get_analysis_subdirectory(analysisTask, subdirectory="images")
         if imageIndex is None:
-            return os.sep.join([destPath, imageBaseName+'.tif'])
+            return os.sep.join([destPath, imageBaseName + ".tif"])
         else:
-            return os.sep.join([destPath, imageBaseName+str(imageIndex)+'.tif'])
+            return os.sep.join([destPath, imageBaseName + str(imageIndex) + ".tif"])
 
     def _analysis_result_save_path(
-            self, resultName: str, analysisTask: TaskOrName,
-            resultIndex: int=None, subdirectory: str=None,
-            fileExtension: str=None) -> str:
+        self,
+        resultName: str,
+        analysisTask: TaskOrName,
+        resultIndex: int = None,
+        subdirectory: str = None,
+        fileExtension: str = None,
+    ) -> str:
 
         saveName = resultName
         if resultIndex is not None:
-            saveName += '_' + str(resultIndex)
+            saveName += "_" + str(resultIndex)
         if fileExtension is not None:
             saveName += fileExtension
 
         if analysisTask is None:
             return os.sep.join([self.analysisPath, saveName])
         else:
-            return os.sep.join([self.get_analysis_subdirectory(
-                analysisTask, subdirectory), saveName])
+            return os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), saveName])
 
-    def list_analysis_files(self, analysisTask: TaskOrName = None,
-                            subdirectory: str = None, extension: str = None,
-                            fullPath: bool = True) -> List[str]:
-        basePath = self._analysis_result_save_path(
-            '', analysisTask, subdirectory=subdirectory)
+    def list_analysis_files(
+        self, analysisTask: TaskOrName = None, subdirectory: str = None, extension: str = None, fullPath: bool = True
+    ) -> List[str]:
+        basePath = self._analysis_result_save_path("", analysisTask, subdirectory=subdirectory)
         fileList = os.listdir(basePath)
         if extension:
             fileList = [x for x in fileList if x.endswith(extension)]
@@ -268,10 +264,14 @@ class DataSet(object):
         return fileList
 
     def save_graph_as_gpickle(
-            self, graph: nx.Graph, resultName: str,
-            analysisTask: TaskOrName = None, resultIndex: int = None,
-            subdirectory: str = None):
-        """ Save a networkx graph as a gpickle into the analysis results
+        self,
+        graph: nx.Graph,
+        resultName: str,
+        analysisTask: TaskOrName = None,
+        resultIndex: int = None,
+        subdirectory: str = None,
+    ):
+        """Save a networkx graph as a gpickle into the analysis results
 
         Args:
             graph: the networkx graph to save
@@ -285,14 +285,13 @@ class DataSet(object):
                 should be saved to or None if the graph should be
                 saved to the root directory for the analysis task.
         """
-        savePath = self._analysis_result_save_path(
-            resultName, analysisTask, resultIndex, subdirectory, '.gpickle')
+        savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".gpickle")
         nx.readwrite.gpickle.write_gpickle(graph, savePath)
 
     def load_graph_from_gpickle(
-            self, resultName: str, analysisTask: TaskOrName = None,
-            resultIndex: int = None, subdirectory: str = None):
-        """ Load a networkx graph from a gpickle objective saved in the analysis
+        self, resultName: str, analysisTask: TaskOrName = None, resultIndex: int = None, subdirectory: str = None
+    ):
+        """Load a networkx graph from a gpickle objective saved in the analysis
         results.
 
         Args:
@@ -306,14 +305,18 @@ class DataSet(object):
                 should be saved to or None if the graph should be
                 saved to the root directory for the analysis task.
         """
-        savePath = self._analysis_result_save_path(
-            resultName, analysisTask, resultIndex, subdirectory, '.gpickle')
+        savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".gpickle")
         return nx.readwrite.gpickle.read_gpickle(savePath)
 
     def save_dataframe_to_csv(
-            self, dataframe: pandas.DataFrame, resultName: str,
-            analysisTask: TaskOrName = None, resultIndex: int = None,
-            subdirectory: str = None, **kwargs) -> None:
+        self,
+        dataframe: pandas.DataFrame,
+        resultName: str,
+        analysisTask: TaskOrName = None,
+        resultIndex: int = None,
+        subdirectory: str = None,
+        **kwargs
+    ) -> None:
         """Save a pandas data frame to a csv file stored in this dataset.
 
         If a previous pandas data frame has been save with the same resultName,
@@ -332,16 +335,19 @@ class DataSet(object):
                 saved to the root directory for the analysis task.
             **kwargs: arguments to pass on to pandas.to_csv
         """
-        savePath = self._analysis_result_save_path(
-                resultName, analysisTask, resultIndex, subdirectory, '.csv')
+        savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".csv")
 
-        with open(savePath, 'w') as f:
+        with open(savePath, "w") as f:
             dataframe.to_csv(f, **kwargs)
 
     def load_dataframe_from_csv(
-            self, resultName: str, analysisTask: TaskOrName = None,
-            resultIndex: int = None, subdirectory: str = None,
-            **kwargs) -> Union[pandas.DataFrame, None]:
+        self,
+        resultName: str,
+        analysisTask: TaskOrName = None,
+        resultIndex: int = None,
+        subdirectory: str = None,
+        **kwargs
+    ) -> Union[pandas.DataFrame, None]:
         """Load a pandas data frame from a csv file stored in this data set.
 
         Args:
@@ -355,36 +361,32 @@ class DataSet(object):
         Raises:
               FileNotFoundError: if the file does not exist
         """
-        savePath = self._analysis_result_save_path(
-                resultName, analysisTask, resultIndex, subdirectory, '.csv') \
-
-        with open(savePath, 'r') as f:
+        savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".csv")
+        with open(savePath, "r") as f:
             return pandas.read_csv(f, **kwargs)
 
-    def open_pandas_hdfstore(self, mode: str, resultName: str,
-                             analysisName: str, resultIndex: int = None,
-                             subdirectory: str = None) -> pandas.HDFStore:
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.h5')
+    def open_pandas_hdfstore(
+        self, mode: str, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> pandas.HDFStore:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".h5")
         return pandas.HDFStore(savePath, mode=mode)
 
     def delete_pandas_hdfstore(
-            self, resultName: str, analysisTask: TaskOrName = None,
-            resultIndex: int = None, subdirectory: str = None) -> None:
-        hPath = self._analysis_result_save_path(
-            resultName, analysisTask, resultIndex, subdirectory, '.h5')
+        self, resultName: str, analysisTask: TaskOrName = None, resultIndex: int = None, subdirectory: str = None
+    ) -> None:
+        hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".h5")
         if os.path.exists(hPath):
             os.remove(hPath)
 
-    def open_table(self, mode: str, resultName: str, analysisName: str,
-                   resultIndex: int = None, subdirectory: str = None
-                   ) -> tables.file:
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.h5')
+    def open_table(
+        self, mode: str, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> tables.file:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".h5")
         return tables.open_file(savePath, mode=mode)
 
-    def delete_table(self, resultName: str, analysisTask: TaskOrName = None,
-                     resultIndex: int = None, subdirectory: str = None) -> None:
+    def delete_table(
+        self, resultName: str, analysisTask: TaskOrName = None, resultIndex: int = None, subdirectory: str = None
+    ) -> None:
         """Delete an hdf5 file stored in this data set if it exists.
 
         Args:
@@ -398,15 +400,19 @@ class DataSet(object):
                 should be saved to or None if the dataframe should be
                 saved to the root directory for the analysis task.
         """
-        hPath = self._analysis_result_save_path(
-                resultName, analysisTask, resultIndex, subdirectory, '.h5')
+        hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".h5")
 
         if os.path.exists(hPath):
             os.remove(hPath)
 
-    def open_hdf5_file(self, mode: str, resultName: str,
-                       analysisTask: TaskOrName = None, resultIndex: int = None,
-                       subdirectory: str = None) -> h5py.File:
+    def open_hdf5_file(
+        self,
+        mode: str,
+        resultName: str,
+        analysisTask: TaskOrName = None,
+        resultIndex: int = None,
+        subdirectory: str = None,
+    ) -> h5py.File:
         """Open an hdf5 file stored in this data set.
 
         Args:
@@ -427,18 +433,15 @@ class DataSet(object):
             FileNotFoundError: if the mode is 'r' and the specified hdf5 file
                 does not exist
         """
-        hPath = self._analysis_result_save_path(
-                resultName, analysisTask, resultIndex, subdirectory, '.hdf5') \
-
-        if mode == 'r' and not os.path.exists(hPath):
-            raise FileNotFoundError(('Unable to open %s for reading since ' +
-                                    'it does not exist.') % hPath)
+        hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".hdf5")
+        if mode == "r" and not os.path.exists(hPath):
+            raise FileNotFoundError(("Unable to open %s for reading since " + "it does not exist.") % hPath)
 
         return h5py.File(hPath, mode)
 
-    def delete_hdf5_file(self, resultName: str, analysisTask: TaskOrName = None,
-                         resultIndex: int = None, subdirectory: str = None
-                         ) -> None:
+    def delete_hdf5_file(
+        self, resultName: str, analysisTask: TaskOrName = None, resultIndex: int = None, subdirectory: str = None
+    ) -> None:
         """Delete an hdf5 file stored in this data set if it exists.
 
         Args:
@@ -452,75 +455,78 @@ class DataSet(object):
                 should be saved to or None if the dataframe should be
                 saved to the root directory for the analysis task.
         """
-        hPath = self._analysis_result_save_path(
-                resultName, analysisTask, resultIndex, subdirectory, '.hdf5') \
-
+        hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".hdf5")
         if os.path.exists(hPath):
             os.remove(hPath)
 
     def save_json_analysis_result(
-            self, analysisResult: Dict, resultName: str,
-            analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> None:
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.json')
-        with open(savePath, 'w') as f:
+        self,
+        analysisResult: Dict,
+        resultName: str,
+        analysisName: str,
+        resultIndex: int = None,
+        subdirectory: str = None,
+    ) -> None:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".json")
+        with open(savePath, "w") as f:
             json.dump(analysisResult, f)
 
     def load_json_analysis_result(
-            self, resultName: str, analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> Dict:
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.json')
-        with open(savePath, 'r') as f:
+        self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> Dict:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".json")
+        with open(savePath, "r") as f:
             return json.load(f)
 
     def load_pickle_analysis_result(
-            self, resultName: str, analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> Dict:
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.pkl')
-        with open(savePath, 'rb') as f:
+        self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> Dict:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".pkl")
+        with open(savePath, "rb") as f:
             return pickle.load(f)
 
     def save_pickle_analysis_result(
-            self, analysisResult, resultName: str, analysisName: str,
-            resultIndex: int = None, subdirectory: str = None):
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory, '.pkl')
-        with open(savePath, 'wb') as f:
+        self, analysisResult, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ):
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".pkl")
+        with open(savePath, "wb") as f:
             pickle.dump(analysisResult, f)
 
     def save_numpy_analysis_result(
-            self, analysisResult: np.ndarray, resultName: str,
-            analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> None:
+        self,
+        analysisResult: np.ndarray,
+        resultName: str,
+        analysisName: str,
+        resultIndex: int = None,
+        subdirectory: str = None,
+    ) -> None:
 
-        savePath = self._analysis_result_save_path(
-                resultName, analysisName, resultIndex, subdirectory)
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory)
         np.save(savePath, analysisResult)
 
     def save_numpy_txt_analysis_result(
-            self, analysisResult: np.ndarray, resultName: str,
-            analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> None:
+        self,
+        analysisResult: np.ndarray,
+        resultName: str,
+        analysisName: str,
+        resultIndex: int = None,
+        subdirectory: str = None,
+    ) -> None:
 
-        savePath = self._analysis_result_save_path(
-            resultName, analysisName, resultIndex, subdirectory)
-        np.savetxt(savePath + '.csv', analysisResult)
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory)
+        np.savetxt(savePath + ".csv", analysisResult)
 
     def load_numpy_analysis_result(
-            self, resultName: str, analysisName: str, resultIndex: int = None,
-            subdirectory: str = None) -> np.array:
+        self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> np.array:
 
-        savePath = self._analysis_result_save_path(
-                resultName, analysisName, resultIndex, subdirectory, '.npy')
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".npy")
         return np.load(savePath, allow_pickle=True)
 
     def load_numpy_analysis_result_if_available(
-            self, resultName: str, analysisName: str, defaultValue,
-            resultIndex: int = None, subdirectory: str = None) -> np.array:
-        """ Load the specified analysis result or return the specified default
+        self, resultName: str, analysisName: str, defaultValue, resultIndex: int = None, subdirectory: str = None
+    ) -> np.array:
+        """Load the specified analysis result or return the specified default
         value if the analysis result does not exist.
 
         Args:
@@ -535,14 +541,13 @@ class DataSet(object):
             doesn't exist.
         """
         try:
-            return self.load_numpy_analysis_result(
-                resultName, analysisName, resultIndex, subdirectory)
+            return self.load_numpy_analysis_result(resultName, analysisName, resultIndex, subdirectory)
         except IOError:
             return defaultValue
 
     def get_analysis_subdirectory(
-            self, analysisTask: TaskOrName, subdirectory: str = None,
-            create: bool = True) -> str:
+        self, analysisTask: TaskOrName, subdirectory: str = None, create: bool = True
+    ) -> str:
         """
         analysisTask can either be the class or a string containing the
         class name.
@@ -556,11 +561,9 @@ class DataSet(object):
             analysisName = analysisTask
 
         if subdirectory is None:
-            subdirectoryPath = os.sep.join(
-                    [self.analysisPath, analysisName])
+            subdirectoryPath = os.sep.join([self.analysisPath, analysisName])
         else:
-            subdirectoryPath = os.sep.join(
-                    [self.analysisPath, analysisName, subdirectory])
+            subdirectoryPath = os.sep.join([self.analysisPath, analysisName, subdirectory])
 
         if create:
             os.makedirs(subdirectoryPath, exist_ok=True)
@@ -568,39 +571,37 @@ class DataSet(object):
         return subdirectoryPath
 
     def get_task_subdirectory(self, analysisTask: TaskOrName):
-        return self.get_analysis_subdirectory(
-                analysisTask, subdirectory='tasks')
+        return self.get_analysis_subdirectory(analysisTask, subdirectory="tasks")
 
     def get_log_subdirectory(self, analysisTask: TaskOrName):
-        return self.get_analysis_subdirectory(
-                analysisTask, subdirectory='log')
+        return self.get_analysis_subdirectory(analysisTask, subdirectory="log")
 
-    def save_analysis_task(self, analysisTask: analysistask.AnalysisTask,
-                           overwrite: bool = False):
-        saveName = os.sep.join([self.get_task_subdirectory(
-            analysisTask), 'task.json'])
+    def save_analysis_task(self, analysisTask: analysistask.AnalysisTask, overwrite: bool = False):
+        saveName = os.sep.join([self.get_task_subdirectory(analysisTask), "task.json"])
 
         try:
-            existingTask = self.load_analysis_task(
-                analysisTask.get_analysis_name())
+            existingTask = self.load_analysis_task(analysisTask.get_analysis_name())
 
             existingParameters = existingTask.get_parameters().copy()
-            existingVersion = existingParameters['merlin_version']
+            existingVersion = existingParameters["merlin_version"]
             newParameters = analysisTask.get_parameters().copy()
-            newVersion = newParameters['merlin_version']
+            newVersion = newParameters["merlin_version"]
 
             if not merlin.is_compatible(existingVersion, newVersion):
                 raise merlin.IncompatibleVersionException(
-                    ('Analysis task with name %s has been previously created '
-                     + 'with MERlin version %s, which is incompatible with '
-                     + 'the current MERlin version, %s. Please remove the '
-                     + 'old analysis folder to continue.')
-                    % (analysisTask.analysisName, existingVersion, newVersion))
+                    (
+                        "Analysis task with name %s has been previously created "
+                        + "with MERlin version %s, which is incompatible with "
+                        + "the current MERlin version, %s. Please remove the "
+                        + "old analysis folder to continue."
+                    )
+                    % (analysisTask.analysisName, existingVersion, newVersion)
+                )
 
-            existingParameters.pop('merlin_version')
-            newParameters.pop('merlin_version')
+            existingParameters.pop("merlin_version")
+            newParameters.pop("merlin_version")
 
-            #if not overwrite and not existingParameters == newParameters:
+            # if not overwrite and not existingParameters == newParameters:
             #    print(existingParameters)
             #    print(newParameters)
             #    raise analysistask.AnalysisAlreadyExistsException(
@@ -611,18 +612,16 @@ class DataSet(object):
         except FileNotFoundError:
             pass
 
-        with open(saveName, 'w') as outFile:
+        with open(saveName, "w") as outFile:
             json.dump(analysisTask.get_parameters(), outFile, indent=4)
 
-    def load_analysis_task(self, analysisTaskName: str) \
-            -> analysistask.AnalysisTask:
-        loadName = os.sep.join([self.get_task_subdirectory(
-            analysisTaskName), 'task.json'])
+    def load_analysis_task(self, analysisTaskName: str) -> analysistask.AnalysisTask:
+        loadName = os.sep.join([self.get_task_subdirectory(analysisTaskName), "task.json"])
 
-        with open(loadName, 'r') as inFile:
+        with open(loadName, "r") as inFile:
             parameters = json.load(inFile)
-            analysisModule = importlib.import_module(parameters['module'])
-            analysisTask = getattr(analysisModule, parameters['class'])
+            analysisModule = importlib.import_module(parameters["module"])
+            analysisTask = getattr(analysisModule, parameters["class"])
             return analysisTask(self, parameters, analysisTaskName)
 
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
@@ -645,8 +644,7 @@ class DataSet(object):
         analysisList = []
         for a in os.listdir(self.analysisPath):
             if os.path.isdir(os.path.join(self.analysisPath, a)):
-                if os.path.exists(
-                        os.path.join(self.analysisPath, a, 'tasks')):
+                if os.path.exists(os.path.join(self.analysisPath, a, "tasks")):
                     analysisList.append(a)
 
         analysisList.sort()
@@ -657,34 +655,29 @@ class DataSet(object):
         Determine if an analysis task with the specified name exists in this
         dataset.
         """
-        analysisPath = self.get_analysis_subdirectory(
-                analysisTaskName, create=False)
+        analysisPath = self.get_analysis_subdirectory(analysisTaskName, create=False)
         return os.path.exists(analysisPath)
 
-    def get_logger(self, analysisTask: analysistask.AnalysisTask,
-                   fragmentIndex: int = None) -> logging.Logger:
+    def get_logger(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> logging.Logger:
         loggerName = analysisTask.get_analysis_name()
         if fragmentIndex is not None:
-            loggerName += '.' + str(fragmentIndex)
+            loggerName += "." + str(fragmentIndex)
 
         logger = logging.getLogger(loggerName)
         logger.setLevel(logging.DEBUG)
-        fileHandler = logging.FileHandler(
-                self._log_path(analysisTask, fragmentIndex))
+        fileHandler = logging.FileHandler(self._log_path(analysisTask, fragmentIndex))
         fileHandler.setLevel(logging.DEBUG)
 
-        formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         fileHandler.setFormatter(formatter)
         logger.addHandler(fileHandler)
 
         return logger
 
-    def close_logger(self, analysisTask: analysistask.AnalysisTask,
-                     fragmentIndex: int = None) -> None:
+    def close_logger(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
         loggerName = analysisTask.get_analysis_name()
         if fragmentIndex is not None:
-            loggerName += '.' + str(fragmentIndex)
+            loggerName += "." + str(fragmentIndex)
 
         logger = logging.getLogger(loggerName)
 
@@ -694,30 +687,27 @@ class DataSet(object):
             handler.flush()
             handler.close()
 
-    def _log_path(self, analysisTask: analysistask.AnalysisTask,
-                  fragmentIndex: int = None) -> str:
+    def _log_path(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> str:
         logName = analysisTask.get_analysis_name()
         if fragmentIndex is not None:
-            logName += '_' + str(fragmentIndex)
-        logName += '.log'
+            logName += "_" + str(fragmentIndex)
+        logName += ".log"
 
         return os.sep.join([self.get_log_subdirectory(analysisTask), logName])
 
-    def _analysis_status_file(self, analysisTask: analysistask.AnalysisTask,
-                              eventName: str, fragmentName: str = None) -> str:
+    def _analysis_status_file(
+        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentName: str = None
+    ) -> str:
         if isinstance(analysisTask, str):
             analysisTask = self.load_analysis_task(analysisTask)
 
         if fragmentName is None:
-            fileName = analysisTask.get_analysis_name() + '.' + eventName
+            fileName = analysisTask.get_analysis_name() + "." + eventName
         else:
-            fileName = analysisTask.get_analysis_name() + \
-                    '_' + str(fragmentName) + '.' + eventName
-        return os.sep.join([self.get_task_subdirectory(analysisTask),
-                fileName])
+            fileName = analysisTask.get_analysis_name() + "_" + str(fragmentName) + "." + eventName
+        return os.sep.join([self.get_task_subdirectory(analysisTask), fileName])
 
-    def get_analysis_environment(self, analysisTask: analysistask.AnalysisTask,
-                                 fragmentName: str = None) -> None:
+    def get_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentName: str = None) -> None:
         """Get the environment variables for the system used to run the
         specified analysis task.
 
@@ -733,141 +723,121 @@ class DataSet(object):
         if not self.check_analysis_done(analysisTask, fragmentName):
             return None
 
-        fileName = self._analysis_status_file(
-            analysisTask, 'environment', fragmentName)
-        with open(fileName, 'r') as inFile:
+        fileName = self._analysis_status_file(analysisTask, "environment", fragmentName)
+        with open(fileName, "r") as inFile:
             envDict = json.load(inFile)
         return envDict
 
-    def _record_analysis_environment(
-            self, analysisTask: analysistask.AnalysisTask,
-            fragmentIndex: int = None) -> None:
-        fileName = self._analysis_status_file(
-            analysisTask, 'environment', fragmentIndex)
-        with open(fileName, 'w') as outFile:
+    def _record_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
+        fileName = self._analysis_status_file(analysisTask, "environment", fragmentIndex)
+        with open(fileName, "w") as outFile:
             json.dump(dict(os.environ), outFile, indent=4)
 
-    def record_analysis_started(self, analysisTask: analysistask.AnalysisTask,
-                                fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, 'start', fragmentIndex)
+    def record_analysis_started(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
+        self._record_analysis_event(analysisTask, "start", fragmentIndex)
         self._record_analysis_environment(analysisTask, fragmentIndex)
 
-    def record_analysis_running(self, analysisTask: analysistask.AnalysisTask,
-                                fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, 'run', fragmentIndex)
+    def record_analysis_running(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
+        self._record_analysis_event(analysisTask, "run", fragmentIndex)
 
-    def record_analysis_complete(self, analysisTask: analysistask.AnalysisTask,
-                                 fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, 'done', fragmentIndex)
+    def record_analysis_complete(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
+        self._record_analysis_event(analysisTask, "done", fragmentIndex)
 
-    def record_analysis_error(self, analysisTask: analysistask.AnalysisTask,
-                              fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, 'error', fragmentIndex)
+    def record_analysis_error(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
+        self._record_analysis_event(analysisTask, "error", fragmentIndex)
 
-
-    def get_analysis_start_time(self, analysisTask: analysistask.AnalysisTask,
-                                fragmentIndex: int = None) -> float:
+    def get_analysis_start_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
         """Get the time that this analysis task started
 
         Returns:
             The start time for the analysis task execution in seconds since
             the epoch in UTC.
         """
-        with open(self._analysis_status_file(analysisTask, 'start',
-                                             fragmentIndex), 'r') as f:
+        with open(self._analysis_status_file(analysisTask, "start", fragmentIndex), "r") as f:
             return float(f.read())
 
-    def get_analysis_complete_time(self,
-                                   analysisTask: analysistask.AnalysisTask,
-                                   fragmentIndex: int = None) -> float:
+    def get_analysis_complete_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
         """Get the time that this analysis task completed.
 
         Returns:
             The completion time for the analysis task execution in seconds since
             the epoch in UTC.
         """
-        with open(self._analysis_status_file(analysisTask, 'done',
-                                             fragmentIndex), 'r') as f:
+        with open(self._analysis_status_file(analysisTask, "done", fragmentIndex), "r") as f:
             return float(f.read())
 
-    def get_analysis_elapsed_time(self, analysisTask: analysistask.AnalysisTask,
-                                  fragmentIndex: int=None) -> float:
+    def get_analysis_elapsed_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
         """Get the time that this analysis took to complete.
 
         Returns:
             The elapsed time for the analysis task execution in seconds.
             Returns None if the analysis task has not yet completed.
         """
-        return self.get_analysis_complete_time(analysisTask, fragmentIndex) -\
-               self.get_analysis_start_time(analysisTask, fragmentIndex)
+        return self.get_analysis_complete_time(analysisTask, fragmentIndex) - self.get_analysis_start_time(
+            analysisTask, fragmentIndex
+        )
 
     def _record_analysis_event(
-            self, analysisTask: analysistask.AnalysisTask, eventName: str,
-            fragmentIndex: int = None) -> None:
-        fileName = self._analysis_status_file(
-                analysisTask, eventName, fragmentIndex)
-        with open(fileName, 'w') as f:
-            f.write('%s' % time.time())
+        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
+    ) -> None:
+        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
+        with open(fileName, "w") as f:
+            f.write("%s" % time.time())
 
     def _check_analysis_event(
-            self, analysisTask: analysistask.AnalysisTask, eventName: str,
-            fragmentIndex: int = None) -> bool:
-        fileName = self._analysis_status_file(
-            analysisTask, eventName, fragmentIndex)
+        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
+    ) -> bool:
+        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
         return os.path.exists(fileName)
 
     def _reset_analysis_event(
-            self, analysisTask: analysistask.AnalysisTask, eventName: str,
-            fragmentIndex: int = None):
-        fileName = self._analysis_status_file(
-            analysisTask, eventName, fragmentIndex)
+        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
+    ):
+        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
 
         try:
             os.remove(fileName)
         except FileNotFoundError:
             pass
 
-    def is_analysis_idle(self, analysisTask: analysistask.AnalysisTask,
-                         fragmentIndex: int = None) -> bool:
-        fileName = self._analysis_status_file(
-                analysisTask, 'run', fragmentIndex)
+    def is_analysis_idle(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
+        fileName = self._analysis_status_file(analysisTask, "run", fragmentIndex)
         try:
             return time.time() - os.path.getmtime(fileName) > 1
         except FileNotFoundError:
             return True
 
-    def check_analysis_started(self, analysisTask: analysistask.AnalysisTask,
-                               fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, 'start', fragmentIndex)
+    def check_analysis_started(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
+        return self._check_analysis_event(analysisTask, "start", fragmentIndex)
 
-    def check_analysis_done(self, analysisTask: analysistask.AnalysisTask,
-                            fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, 'done', fragmentIndex)
+    def check_analysis_done(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
+        return self._check_analysis_event(analysisTask, "done", fragmentIndex)
 
-    def analysis_done_filename(self, analysisTask: analysistask.AnalysisTask,
-                               fragmentIndex: int = None) -> str:
-        return self._analysis_status_file(analysisTask, 'done', fragmentIndex)
+    def analysis_done_filename(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> str:
+        return self._analysis_status_file(analysisTask, "done", fragmentIndex)
 
-    def check_analysis_error(self, analysisTask: analysistask.AnalysisTask,
-                             fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, 'error', fragmentIndex)
+    def check_analysis_error(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
+        return self._check_analysis_event(analysisTask, "error", fragmentIndex)
 
-    def reset_analysis_status(self, analysisTask: analysistask.AnalysisTask,
-                              fragmentIndex: int = None):
+    def reset_analysis_status(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None):
         if analysisTask.is_running():
             raise analysistask.AnalysisAlreadyStartedException()
 
-        self._reset_analysis_event(analysisTask, 'start', fragmentIndex)
-        self._reset_analysis_event(analysisTask, 'run', fragmentIndex)
-        self._reset_analysis_event(analysisTask, 'done', fragmentIndex)
-        self._reset_analysis_event(analysisTask, 'error', fragmentIndex)
-        self._reset_analysis_event(analysisTask, 'done')
+        self._reset_analysis_event(analysisTask, "start", fragmentIndex)
+        self._reset_analysis_event(analysisTask, "run", fragmentIndex)
+        self._reset_analysis_event(analysisTask, "done", fragmentIndex)
+        self._reset_analysis_event(analysisTask, "error", fragmentIndex)
+        self._reset_analysis_event(analysisTask, "done")
+
 
 class ImageDataSet(DataSet):
-
-    def __init__(self, dataDirectoryName: str, dataHome: str = None,
-                 analysisHome: str = None,
-                 microscopeParametersName: str = None):
+    def __init__(
+        self,
+        dataDirectoryName: str,
+        dataHome: str = None,
+        analysisHome: str = None,
+        microscopeParametersName: str = None,
+    ):
         """Create a dataset for the specified raw data.
 
         Args:
@@ -892,12 +862,10 @@ class ImageDataSet(DataSet):
         self._load_microscope_parameters()
 
     def get_image_file_names(self):
-        return sorted(self.rawDataPortal.list_files(
-            extensionList=['.dax', '.tif', '.tiff', '.zarr', '.zar']))
+        return sorted(self.rawDataPortal.list_files(extensionList=[".dax", ".tif", ".tiff", ".zarr", ".zar"]))
 
     def load_image(self, imagePath, frameIndex):
-        with imagereader.infer_reader(
-                self.rawDataPortal.open_file(imagePath)) as reader:
+        with imagereader.infer_reader(self.rawDataPortal.open_file(imagePath)) as reader:
             imageIn = reader.load_frame(int(frameIndex))
             if self.transpose:
                 imageIn = np.transpose(imageIn)
@@ -915,21 +883,17 @@ class ImageDataSet(DataSet):
             a three element list with [width, height, frameCount] or None
                     if the file does not exist
         """
-        with imagereader.infer_reader(self.rawDataPortal.open_file(imagePath)
-                                      ) as reader:
+        with imagereader.infer_reader(self.rawDataPortal.open_file(imagePath)) as reader:
             return reader.film_size()
 
     def _import_microscope_parameters(self, microscopeParametersName):
-        sourcePath = os.sep.join([merlin.MICROSCOPE_PARAMETERS_HOME,
-                microscopeParametersName])
-        destPath = os.sep.join(
-                [self.analysisPath, 'microscope_parameters.json'])
+        sourcePath = os.sep.join([merlin.MICROSCOPE_PARAMETERS_HOME, microscopeParametersName])
+        destPath = os.sep.join([self.analysisPath, "microscope_parameters.json"])
 
         shutil.copyfile(sourcePath, destPath)
 
     def _load_microscope_parameters(self):
-        path = os.sep.join(
-                [self.analysisPath, 'microscope_parameters.json'])
+        path = os.sep.join([self.analysisPath, "microscope_parameters.json"])
 
         if os.path.exists(path):
             with open(path) as inputFile:
@@ -937,15 +901,11 @@ class ImageDataSet(DataSet):
         else:
             self.microscopeParameters = {}
 
-        self.flipHorizontal = self.microscopeParameters.get(
-            'flip_horizontal', True)
-        self.flipVertical = self.microscopeParameters.get(
-            'flip_vertical', False)
-        self.transpose = self.microscopeParameters.get('transpose', True)
-        self.micronsPerPixel = self.microscopeParameters.get(
-                'microns_per_pixel', 0.108)
-        self.imageDimensions = self.microscopeParameters.get(
-                'image_dimensions', [2048, 2048])
+        self.flipHorizontal = self.microscopeParameters.get("flip_horizontal", True)
+        self.flipVertical = self.microscopeParameters.get("flip_vertical", False)
+        self.transpose = self.microscopeParameters.get("transpose", True)
+        self.micronsPerPixel = self.microscopeParameters.get("microns_per_pixel", 0.108)
+        self.imageDimensions = self.microscopeParameters.get("image_dimensions", [2048, 2048])
 
     def get_microns_per_pixel(self):
         """Get the conversion factor to convert pixels to microns."""
@@ -961,23 +921,28 @@ class ImageDataSet(DataSet):
         return self.imageDimensions
 
     def get_image_xml_metadata(self, imagePath: str) -> Dict:
-        """ Get the xml metadata stored for the specified image.
+        """Get the xml metadata stored for the specified image.
 
         Args:
             imagePath: the path to the image file (.dax or .tif)
         Returns: the metadata from the associated xml file
         """
-        filePortal = self.rawDataPortal.open_file(
-            imagePath).get_sibling_with_extension('.xml')
+        filePortal = self.rawDataPortal.open_file(imagePath).get_sibling_with_extension(".xml")
         return xmltodict.parse(filePortal.read_as_text())
 
 
 class MERFISHDataSet(ImageDataSet):
-
-    def __init__(self, dataDirectoryName: str, codebookNames: List[str] = None,
-                 dataOrganizationName: str = None, positionFileName: str = None,
-                 dataHome: str = None, analysisHome: str = None,
-                 microscopeParametersName: str = None, fovList: str = None):
+    def __init__(
+        self,
+        dataDirectoryName: str,
+        codebookNames: List[str] = None,
+        dataOrganizationName: str = None,
+        positionFileName: str = None,
+        dataHome: str = None,
+        analysisHome: str = None,
+        microscopeParametersName: str = None,
+        fovList: str = None,
+    ):
         """Create a MERFISH dataset for the specified raw data.
 
         Args:
@@ -1006,14 +971,11 @@ class MERFISHDataSet(ImageDataSet):
                     MERlin will be run on. This can be used to process a subset of
                     the data. If not given, the entire dataset is processed.
         """
-        super().__init__(dataDirectoryName, dataHome, analysisHome,
-                         microscopeParametersName)
+        super().__init__(dataDirectoryName, dataHome, analysisHome, microscopeParametersName)
 
-        self.dataOrganization = dataorganization.DataOrganization(
-                self, dataOrganizationName, fovList)
+        self.dataOrganization = dataorganization.DataOrganization(self, dataOrganizationName, fovList)
         if codebookNames:
-            self.codebooks = [codebook.Codebook(self, name, i)
-                              for i, name in enumerate(codebookNames)]
+            self.codebooks = [codebook.Codebook(self, name, i) for i, name in enumerate(codebookNames)]
         else:
             self.codebooks = self.load_codebooks()
 
@@ -1022,7 +984,7 @@ class MERFISHDataSet(ImageDataSet):
         self._load_positions()
 
     def save_codebook(self, codebook: codebook.Codebook) -> None:
-        """ Store the specified codebook in this dataset.
+        """Store the specified codebook in this dataset.
 
         If a codebook with the same codebook index and codebook name as the
         specified codebook already exists in this dataset, it is not
@@ -1034,25 +996,26 @@ class MERFISHDataSet(ImageDataSet):
             FileExistsError: If a codebook with the same codebook index but
                 a different codebook name is already save within this dataset.
         """
-        existingCodebookName = self.get_stored_codebook_name(
-            codebook.get_codebook_index())
-        if existingCodebookName and existingCodebookName \
-                != codebook.get_codebook_name():
-            raise FileExistsError(('Unable to save codebook %s with index %i '
-                                  + ' since codebook %s already exists with '
-                                  + 'the same index')
-                                  % (codebook.get_codebook_name(),
-                                     codebook.get_codebook_index(),
-                                     existingCodebookName))
+        existingCodebookName = self.get_stored_codebook_name(codebook.get_codebook_index())
+        if existingCodebookName and existingCodebookName != codebook.get_codebook_name():
+            raise FileExistsError(
+                (
+                    "Unable to save codebook %s with index %i "
+                    + " since codebook %s already exists with "
+                    + "the same index"
+                )
+                % (codebook.get_codebook_name(), codebook.get_codebook_index(), existingCodebookName)
+            )
 
         if not existingCodebookName:
             self.save_dataframe_to_csv(
                 codebook.get_data(),
-                '_'.join(['codebook', str(codebook.get_codebook_index()),
-                          codebook.get_codebook_name()]), index=False)
+                "_".join(["codebook", str(codebook.get_codebook_index()), codebook.get_codebook_name()]),
+                index=False,
+            )
 
     def load_codebooks(self) -> List[codebook.Codebook]:
-        """ Get all the codebooks stored within this dataset.
+        """Get all the codebooks stored within this dataset.
 
         Returns:
             A list of all the stored codebooks.
@@ -1068,9 +1031,8 @@ class MERFISHDataSet(ImageDataSet):
 
         return codebookList
 
-    def load_codebook(self, codebookIndex: int = 0
-                      ) -> Optional[codebook.Codebook]:
-        """ Load the codebook stored within this dataset with the specified
+    def load_codebook(self, codebookIndex: int = 0) -> Optional[codebook.Codebook]:
+        """Load the codebook stored within this dataset with the specified
         index.
 
         Args:
@@ -1079,17 +1041,14 @@ class MERFISHDataSet(ImageDataSet):
             The codebook stored with the specified codebook index. If no
             codebook exists with the specified index then None is returned.
         """
-        codebookFile = [x for x in self.list_analysis_files(extension='.csv')
-                        if ('codebook_%i_' % codebookIndex) in x]
+        codebookFile = [x for x in self.list_analysis_files(extension=".csv") if ("codebook_%i_" % codebookIndex) in x]
         if len(codebookFile) < 1:
             return None
-        codebookName = '_'.join(os.path.splitext(os.path.basename(
-            codebookFile[0]))[0].split('_')[2:])
-        return codebook.Codebook(
-            self, codebookFile[0], codebookIndex, codebookName)
+        codebookName = "_".join(os.path.splitext(os.path.basename(codebookFile[0]))[0].split("_")[2:])
+        return codebook.Codebook(self, codebookFile[0], codebookIndex, codebookName)
 
     def get_stored_codebook_name(self, codebookIndex: int = 0) -> Optional[str]:
-        """ Get the name of the codebook stored within this dataset with the
+        """Get the name of the codebook stored within this dataset with the
         specified index.
 
         Args:
@@ -1100,15 +1059,13 @@ class MERFISHDataSet(ImageDataSet):
             If no codebook exists with the specified index then None is
             returned.
         """
-        codebookFile = [x for x in self.list_analysis_files(extension='.csv')
-                        if ('codebook_%i_' % codebookIndex) in x]
+        codebookFile = [x for x in self.list_analysis_files(extension=".csv") if ("codebook_%i_" % codebookIndex) in x]
         if len(codebookFile) < 1:
             return None
-        return '_'.join(os.path.splitext(
-            os.path.basename(codebookFile[0]))[0].split('_')[2:])
+        return "_".join(os.path.splitext(os.path.basename(codebookFile[0]))[0].split("_")[2:])
 
     def get_codebooks(self) -> List[codebook.Codebook]:
-        """ Get the codebooks associated with this dataset.
+        """Get the codebooks associated with this dataset.
 
         Returns:
             A list containing the codebooks for this dataset.
@@ -1135,7 +1092,7 @@ class MERFISHDataSet(ImageDataSet):
             of the specified fov in pixels.
         """
         # TODO - this should be implemented using the position of the fov.
-        return self.positions.loc[fov]['X'], self.positions.loc[fov]['Y']
+        return self.positions.loc[fov]["X"], self.positions.loc[fov]["Y"]
 
     def z_index_to_position(self, zIndex: int) -> float:
         """Get the z position associated with the provided z index."""
@@ -1152,7 +1109,7 @@ class MERFISHDataSet(ImageDataSet):
 
         zIndex = np.where(self.get_z_positions() == zPosition)[0]
         if len(zIndex) == 0:
-            raise Exception('Requested z=%0.2f position not found.' % zPosition)
+            raise Exception("Requested z=%0.2f position not found." % zPosition)
 
         return zIndex[0]
 
@@ -1169,51 +1126,43 @@ class MERFISHDataSet(ImageDataSet):
 
     def get_imaging_rounds(self) -> List[int]:
         # TODO - check this function
-        return np.unique(self.dataOrganization.fileMap['imagingRound'])
+        return np.unique(self.dataOrganization.fileMap["imagingRound"])
 
     def get_raw_image(self, dataChannel, fov, zPosition):
         return self.load_image(
-                self.dataOrganization.get_image_filename(dataChannel, fov),
-                self.dataOrganization.get_image_frame_index(
-                    dataChannel, zPosition))
+            self.dataOrganization.get_image_filename(dataChannel, fov),
+            self.dataOrganization.get_image_frame_index(dataChannel, zPosition),
+        )
 
     def get_fiducial_image(self, dataChannel, fov):
         index = self.dataOrganization.get_fiducial_frame_index(dataChannel)
         if isinstance(index, np.ndarray):
-            return np.array([
-                self.load_image(
-                self.dataOrganization.get_fiducial_filename(dataChannel, fov),
-                i) for i in index
-            ])
-        return self.load_image(
-                self.dataOrganization.get_fiducial_filename(dataChannel, fov),
-                index)
+            return np.array(
+                [self.load_image(self.dataOrganization.get_fiducial_filename(dataChannel, fov), i) for i in index]
+            )
+        return self.load_image(self.dataOrganization.get_fiducial_filename(dataChannel, fov), index)
 
     def _import_positions_from_metadata(self):
         positionData = []
         for f in self.get_fovs():
-            metadata = self.get_image_xml_metadata(
-                self.dataOrganization.get_image_filename(0, f))
-            currentPositions = \
-                metadata['settings']['acquisition']['stage_position']['#text'] \
-                .split(',')
+            metadata = self.get_image_xml_metadata(self.dataOrganization.get_image_filename(0, f))
+            currentPositions = metadata["settings"]["acquisition"]["stage_position"]["#text"].split(",")
             positionData.append([float(x) for x in currentPositions])
-        positionPath = os.sep.join([self.analysisPath, 'positions.csv'])
-        np.savetxt(positionPath, np.array(positionData), delimiter=',')
+        positionPath = os.sep.join([self.analysisPath, "positions.csv"])
+        np.savetxt(positionPath, np.array(positionData), delimiter=",")
 
     def _load_positions(self):
-        positionPath = os.sep.join([self.analysisPath, 'positions.csv'])
+        positionPath = os.sep.join([self.analysisPath, "positions.csv"])
         if not os.path.exists(positionPath):
             self._import_positions_from_metadata()
-        self.positions = pandas.read_csv(
-            positionPath, header=None, names=['X', 'Y'])
+        self.positions = pandas.read_csv(positionPath, header=None, names=["X", "Y"])
         self.positions.index = self.get_fovs()
 
     def _import_positions(self, positionFileName):
         sourcePath = os.sep.join([merlin.POSITION_HOME, positionFileName])
-        destPath = os.sep.join([self.analysisPath, 'positions.csv'])
+        destPath = os.sep.join([self.analysisPath, "positions.csv"])
 
         shutil.copyfile(sourcePath, destPath)
 
-    def _convert_parameter_list(self, listIn, castFunction, delimiter=';'):
-        return [castFunction(x) for x in listIn.split(delimiter) if len(x)>0]
+    def _convert_parameter_list(self, listIn, castFunction, delimiter=";"):
+        return [castFunction(x) for x in listIn.split(delimiter) if len(x) > 0]

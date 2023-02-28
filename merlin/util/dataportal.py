@@ -22,23 +22,23 @@ class DataPortal(ABC):
         self._basePath = basePath
 
     @staticmethod
-    def create_portal(basePath: str) -> 'DataPortal':
-        """ Create a new portal capable of reading from the specified basePath.
+    def create_portal(basePath: str) -> "DataPortal":
+        """Create a new portal capable of reading from the specified basePath.
 
         Args:
             basePath: the base path of the data portal
         Returns: a new DataPortal for reading from basePath
         """
-        if basePath.startswith('s3://'):
+        if basePath.startswith("s3://"):
             return S3DataPortal(basePath)
-        elif basePath.startswith('gc://'):
+        elif basePath.startswith("gc://"):
             return GCloudDataPortal(basePath)
         else:
             return LocalDataPortal(basePath)
 
     @abstractmethod
     def is_available(self) -> bool:
-        """ Determine if the basePath represented by this DataPortal is
+        """Determine if the basePath represented by this DataPortal is
         currently accessible.
 
         Returns: True if the basePath is available, otherwise False.
@@ -46,8 +46,8 @@ class DataPortal(ABC):
         pass
 
     @abstractmethod
-    def open_file(self, fileName: str) -> 'FilePortal':
-        """ Open a reference to a file within the basePath represented
+    def open_file(self, fileName: str) -> "FilePortal":
+        """Open a reference to a file within the basePath represented
         by this DataPortal.
 
         Args:
@@ -57,16 +57,14 @@ class DataPortal(ABC):
         pass
 
     @staticmethod
-    def _filter_file_list(inputList: List[str], extensionList: List[str]
-                          ) -> List[str]:
+    def _filter_file_list(inputList: List[str], extensionList: List[str]) -> List[str]:
         if not extensionList:
             return inputList
-        return [f for f in inputList if any(
-            [f.endswith(x) for x in extensionList])]
+        return [f for f in inputList if any([f.endswith(x) for x in extensionList])]
 
     @abstractmethod
     def list_files(self, extensionList: List[str] = None) -> List[str]:
-        """ List all the files within the base path represented by this
+        """List all the files within the base path represented by this
         DataReader.
 
         Args:
@@ -100,7 +98,7 @@ class LocalDataPortal(DataPortal):
         if depth > 0:
             _, dirs, _ = next(os.walk(root))
             for folder in dirs:
-                allFiles.extend(self._list_files(os.path.join(root, folder), depth-1))
+                allFiles.extend(self._list_files(os.path.join(root, folder), depth - 1))
         return allFiles
 
     def list_files(self, extensionList=None):
@@ -119,25 +117,25 @@ class S3DataPortal(DataPortal):
 
         t = parse.urlparse(basePath)
         self._bucketName = t.netloc
-        self._prefix = t.path.strip('/')
-        self._s3 = boto3.resource('s3', **kwargs)
+        self._prefix = t.path.strip("/")
+        self._s3 = boto3.resource("s3", **kwargs)
 
     def is_available(self):
-        objects = list(self._s3.Bucket(self._bucketName).objects.limit(10)
-                       .filter(Prefix=self._prefix))
+        objects = list(self._s3.Bucket(self._bucketName).objects.limit(10).filter(Prefix=self._prefix))
         return len(objects) > 0
 
     def open_file(self, fileName):
         if self._basePath in fileName:
             fullPath = fileName
         else:
-            fullPath = '/'.join([self._basePath, fileName])
+            fullPath = "/".join([self._basePath, fileName])
         return S3FilePortal(fullPath, s3=self._s3)
 
     def list_files(self, extensionList=None):
-        allFiles = ['s3://%s/%s' % (self._bucketName, f.key)
-                    for f in self._s3.Bucket(self._bucketName)
-                    .objects.filter(Prefix=self._prefix)]
+        allFiles = [
+            "s3://%s/%s" % (self._bucketName, f.key)
+            for f in self._s3.Bucket(self._bucketName).objects.filter(Prefix=self._prefix)
+        ]
         return self._filter_file_list(allFiles, extensionList)
 
 
@@ -152,25 +150,25 @@ class GCloudDataPortal(DataPortal):
 
         t = parse.urlparse(basePath)
         self._bucketName = t.netloc
-        self._prefix = t.path.strip('/')
+        self._prefix = t.path.strip("/")
         self._client = storage.Client(**kwargs)
 
     def is_available(self):
-        blobList = list(self._client.list_blobs(
-            self._bucketName, prefix=self._prefix, max_results=10))
+        blobList = list(self._client.list_blobs(self._bucketName, prefix=self._prefix, max_results=10))
         return len(blobList) > 0
 
     def open_file(self, fileName):
         if self._basePath in fileName:
             fullPath = fileName
         else:
-            fullPath = '/'.join([self._basePath, fileName])
+            fullPath = "/".join([self._basePath, fileName])
         return GCloudFilePortal(fullPath, self._client)
 
     def list_files(self, extensionList=None):
-        allFiles = ['gc://%s/%s' % (self._bucketName, f.name)
-                    for f in self._client.list_blobs(
-                        self._bucketName, prefix=self._prefix)]
+        allFiles = [
+            "gc://%s/%s" % (self._bucketName, f.name)
+            for f in self._client.list_blobs(self._bucketName, prefix=self._prefix)
+        ]
         return self._filter_file_list(allFiles, extensionList)
 
 
@@ -194,33 +192,33 @@ class FilePortal(ABC):
         self.close()
 
     def get_file_name(self) -> str:
-        """ Get the name of the file accessed by this file portal.
+        """Get the name of the file accessed by this file portal.
 
         Returns: The full file name
         """
         return self._fileName
 
     def get_file_extension(self) -> str:
-        """ Get the extension of the file accessed by this file portal.
+        """Get the extension of the file accessed by this file portal.
 
         Returns: The file extension
         """
         return os.path.splitext(self._fileName)[1]
 
     def _exchange_extension(self, newExtension: str) -> str:
-        return ''.join([os.path.splitext(self._fileName)[0], newExtension])
+        return "".join([os.path.splitext(self._fileName)[0], newExtension])
 
     @abstractmethod
     def exists(self) -> bool:
-        """ Determine if this file exists within the dataset.
+        """Determine if this file exists within the dataset.
 
         Returns: Flag indicating whether or not the file exists
         """
         pass
 
     @abstractmethod
-    def get_sibling_with_extension(self, newExtension: str) -> 'FilePortal':
-        """ Open the file with the same base name as this file but with the
+    def get_sibling_with_extension(self, newExtension: str) -> "FilePortal":
+        """Open the file with the same base name as this file but with the
         specified extension.
 
         Args:
@@ -231,7 +229,7 @@ class FilePortal(ABC):
 
     @abstractmethod
     def read_as_text(self) -> str:
-        """ Read the contents of this file as a string.
+        """Read the contents of this file as a string.
 
         Returns: the file contents as a string
         """
@@ -239,7 +237,7 @@ class FilePortal(ABC):
 
     @abstractmethod
     def read_file_bytes(self, startByte: int, endByte: int) -> bytes:
-        """ Read bytes within the specified range from this file.
+        """Read bytes within the specified range from this file.
 
         Args:
             startByte: the index of the first byte to read (inclusive)
@@ -251,7 +249,7 @@ class FilePortal(ABC):
 
     @abstractmethod
     def close(self) -> None:
-        """ Close this file portal."""
+        """Close this file portal."""
         pass
 
 
@@ -264,7 +262,7 @@ class LocalFilePortal(FilePortal):
     def __init__(self, fileName: str):
         super().__init__(fileName)
         try:
-            self._fileHandle = open(fileName, 'rb')
+            self._fileHandle = open(fileName, "rb")
         except (IsADirectoryError, PermissionError):  # For .zarr files
             self._fileHandle = None
 
@@ -276,11 +274,11 @@ class LocalFilePortal(FilePortal):
 
     def read_as_text(self):
         self._fileHandle.seek(0)
-        return self._fileHandle.read().decode('utf-8')
+        return self._fileHandle.read().decode("utf-8")
 
     def read_file_bytes(self, startByte, endByte):
         self._fileHandle.seek(startByte)
-        return self._fileHandle.read(endByte-startByte)
+        return self._fileHandle.read(endByte - startByte)
 
     def close(self) -> None:
         try:
@@ -299,9 +297,9 @@ class S3FilePortal(FilePortal):
         super().__init__(fileName)
         t = parse.urlparse(fileName)
         self._bucketName = t.netloc
-        self._prefix = t.path.strip('/')
+        self._prefix = t.path.strip("/")
         if s3 is None:
-            self._s3 = boto3.resource('s3')
+            self._s3 = boto3.resource("s3")
         else:
             self._s3 = s3
 
@@ -311,7 +309,7 @@ class S3FilePortal(FilePortal):
         try:
             self._fileHandle.load()
         except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == '404':
+            if e.response["Error"]["Code"] == "404":
                 return False
         return True
 
@@ -319,11 +317,10 @@ class S3FilePortal(FilePortal):
         return S3FilePortal(self._exchange_extension(newExtension), self._s3)
 
     def read_as_text(self):
-        return self._fileHandle.get()['Body'].read().decode('utf-8')
+        return self._fileHandle.get()["Body"].read().decode("utf-8")
 
     def read_file_bytes(self, startByte, endByte):
-        return self._fileHandle.get(
-            Range='bytes=%i-%i' % (startByte, endByte-1))['Body'].read()
+        return self._fileHandle.get(Range="bytes=%i-%i" % (startByte, endByte - 1))["Body"].read()
 
     def close(self) -> None:
         pass
@@ -343,7 +340,7 @@ class GCloudFilePortal(FilePortal):
             self._client = client
         t = parse.urlparse(fileName)
         self._bucketName = t.netloc
-        self._prefix = t.path.strip('/')
+        self._prefix = t.path.strip("/")
         self._bucket = self._client.get_bucket(self._bucketName)
 
         self._fileHandle = self._bucket.get_blob(self._prefix)
@@ -352,11 +349,9 @@ class GCloudFilePortal(FilePortal):
         return self._fileHandle.exists()
 
     def get_sibling_with_extension(self, newExtension: str):
-        return GCloudFilePortal(
-            self._exchange_extension(newExtension), self._client)
+        return GCloudFilePortal(self._exchange_extension(newExtension), self._client)
 
-    def _error_tolerant_reading(self, method, startByte=None,
-                                endByte=None):
+    def _error_tolerant_reading(self, method, startByte=None, endByte=None):
         backoffSeries = [1, 2, 4, 8, 16, 32, 64, 128, 256]
         for sleepDuration in backoffSeries:
             try:
@@ -375,7 +370,7 @@ class GCloudFilePortal(FilePortal):
         delays, up to a delay of about 4 minutes
         """
         file = self._error_tolerant_reading(self._fileHandle.download_as_string)
-        return file.decode('utf-8')
+        return file.decode("utf-8")
 
     def read_file_bytes(self, startByte, endByte):
         """
@@ -383,11 +378,10 @@ class GCloudFilePortal(FilePortal):
         exception it reattempts after sleeping for exponentially increasing
         delays, up to a delay of about 4 minutes
         """
-        file = self._error_tolerant_reading(self._fileHandle.download_as_string,
-                                            startByte=startByte,
-                                            endByte=endByte-1)
+        file = self._error_tolerant_reading(
+            self._fileHandle.download_as_string, startByte=startByte, endByte=endByte - 1
+        )
         return file
-
 
     def close(self) -> None:
         pass

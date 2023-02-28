@@ -25,9 +25,14 @@ class SpatialFeature(object):
     A spatial feature is a collection of contiguous voxels.
     """
 
-    def __init__(self, boundaryList: List[List[geometry.Polygon]], fov: int,
-                 zCoordinates: np.array = None, uniqueID: int = None,
-                 label: int = -1) -> None:
+    def __init__(
+        self,
+        boundaryList: List[List[geometry.Polygon]],
+        fov: int,
+        zCoordinates: np.array = None,
+        uniqueID: int = None,
+        label: int = -1,
+    ) -> None:
         """Create a new feature specified by a list of pixels
 
         Args:
@@ -58,10 +63,13 @@ class SpatialFeature(object):
             self._zCoordinates = np.arange(len(boundaryList))
 
     @staticmethod
-    def feature_from_label_matrix(labelMatrix: np.ndarray, fov: int,
-                                  transformationMatrix: np.ndarray = None,
-                                  zCoordinates: np.ndarray = None,
-                                  label: int = -1):
+    def feature_from_label_matrix(
+        labelMatrix: np.ndarray,
+        fov: int,
+        transformationMatrix: np.ndarray = None,
+        zCoordinates: np.ndarray = None,
+        label: int = -1,
+    ):
         """Generate a new feature from the specified label matrix.
 
         Args:
@@ -79,17 +87,21 @@ class SpatialFeature(object):
         Returns: the new feature
         """
 
-        boundaries = [SpatialFeature._extract_boundaries(x)
-                      for x in labelMatrix]
+        boundaries = [SpatialFeature._extract_boundaries(x) for x in labelMatrix]
 
         if transformationMatrix is not None:
-            boundaries = [SpatialFeature._transform_boundaries(
-                x, transformationMatrix) for x in boundaries]
+            boundaries = [SpatialFeature._transform_boundaries(x, transformationMatrix) for x in boundaries]
 
-        return SpatialFeature([SpatialFeature._remove_invalid_boundaries(
-            SpatialFeature._remove_interior_boundaries(
-                [geometry.Polygon(x) for x in b if len(x) > 2]))
-                               for b in boundaries], fov, zCoordinates)
+        return SpatialFeature(
+            [
+                SpatialFeature._remove_invalid_boundaries(
+                    SpatialFeature._remove_interior_boundaries([geometry.Polygon(x) for x in b if len(x) > 2])
+                )
+                for b in boundaries
+            ],
+            fov,
+            zCoordinates,
+        )
 
     @staticmethod
     def _extract_boundaries(labelMatrix: np.ndarray) -> List[np.ndarray]:
@@ -102,40 +114,32 @@ class SpatialFeature(object):
         Returns: a list of n x 2 numpy arrays indicating the x, y coordinates
             of the boundaries where n is the number of boundary coordinates
         """
-        boundaries = measure.find_contours(np.transpose(labelMatrix), 0.9,
-                                           fully_connected='high')
+        boundaries = measure.find_contours(np.transpose(labelMatrix), 0.9, fully_connected="high")
         return boundaries
 
     @staticmethod
-    def _transform_boundaries(
-            boundaries: List[np.ndarray],
-            transformationMatrix: np.ndarray) -> List[np.ndarray]:
+    def _transform_boundaries(boundaries: List[np.ndarray], transformationMatrix: np.ndarray) -> List[np.ndarray]:
 
         transformedList = []
         for b in boundaries:
-            reshapedBoundaries = np.reshape(
-                b, (1, b.shape[0], 2)).astype(np.float32)
-            transformedBoundaries = cv2.transform(
-                reshapedBoundaries, transformationMatrix)[0, :, :2]
+            reshapedBoundaries = np.reshape(b, (1, b.shape[0], 2)).astype(np.float32)
+            transformedBoundaries = cv2.transform(reshapedBoundaries, transformationMatrix)[0, :, :2]
             transformedList.append(transformedBoundaries)
 
         return transformedList
 
     @staticmethod
-    def _remove_interior_boundaries(
-            inPolygons: List[geometry.Polygon]) -> List[geometry.Polygon]:
+    def _remove_interior_boundaries(inPolygons: List[geometry.Polygon]) -> List[geometry.Polygon]:
         goodPolygons = []
 
         for p in inPolygons:
-            if not any([pTest.contains(p)
-                        for pTest in inPolygons if p != pTest]):
+            if not any([pTest.contains(p) for pTest in inPolygons if p != pTest]):
                 goodPolygons.append(p)
 
         return goodPolygons
 
     @staticmethod
-    def _remove_invalid_boundaries(
-            inPolygons: List[geometry.Polygon]) -> List[geometry.Polygon]:
+    def _remove_invalid_boundaries(inPolygons: List[geometry.Polygon]) -> List[geometry.Polygon]:
         return [p for p in inPolygons if p.is_valid]
 
     def set_fov(self, newFOV: int) -> None:
@@ -186,10 +190,8 @@ class SpatialFeature(object):
         if len(zPos) > 1:
             zDiff = np.diff(zPos)
             zNum = np.array([[x, x + 1] for x in range(len(zPos) - 1)])
-            areas = np.array([np.sum([y.area for y in x]) if len(x) > 0
-                              else 0 for x in boundaries])
-            totalVolume = np.sum([np.mean(areas[zNum[x]]) * zDiff[x]
-                                  for x in range(zNum.shape[0])])
+            areas = np.array([np.sum([y.area for y in x]) if len(x) > 0 else 0 for x in boundaries])
+            totalVolume = np.sum([np.mean(areas[zNum[x]]) * zDiff[x] for x in range(zNum.shape[0])])
         else:
             totalVolume = np.sum([y.area for x in boundaries for y in x])
 
@@ -198,8 +200,7 @@ class SpatialFeature(object):
     def intersection(self, intersectFeature) -> float:
 
         intersectArea = 0
-        for p1Set, p2Set in zip(self.get_boundaries(),
-                                intersectFeature.get_boundaries()):
+        for p1Set, p2Set in zip(self.get_boundaries(), intersectFeature.get_boundaries()):
             for p1 in p1Set:
                 for p2 in p2Set:
                     intersectArea += p1.intersection(p2).area
@@ -218,13 +219,17 @@ class SpatialFeature(object):
                 otherwise False. This returns false if inFeature only shares
                 a boundary with this feature.
         """
-        if all([b1.disjoint(b2) for b1List, b2List in zip(
-                    self.get_boundaries(), inFeature.get_boundaries())
-                for b1 in b1List for b2 in b2List]):
+        if all(
+            [
+                b1.disjoint(b2)
+                for b1List, b2List in zip(self.get_boundaries(), inFeature.get_boundaries())
+                for b1 in b1List
+                for b2 in b2List
+            ]
+        ):
             return False
 
-        for b1List, b2List in zip(
-                self.get_boundaries(), inFeature.get_boundaries()):
+        for b1List, b2List in zip(self.get_boundaries(), inFeature.get_boundaries()):
             for b1 in b1List:
                 for b2 in b2List:
                     x, y = b1.exterior.coords.xy
@@ -247,8 +252,7 @@ class SpatialFeature(object):
             return False
         if self.get_feature_id() != testFeature.get_feature_id():
             return False
-        if not np.array_equal(self.get_z_coordinates(),
-                              testFeature.get_z_coordinates()):
+        if not np.array_equal(self.get_z_coordinates(), testFeature.get_z_coordinates()):
             return False
 
         if len(self.get_boundaries()) != len(testFeature.get_boundaries()):
@@ -297,16 +301,15 @@ class SpatialFeature(object):
 
         for zIndex in range(len(boundaries)):
             currentIndexes = np.where(positionList[:, 2] == zIndex)[0]
-            currentContainment = [self.contains_point(
-                geometry.Point(x[0], x[1]), zIndex)
-                for x in positionList[currentIndexes]]
+            currentContainment = [
+                self.contains_point(geometry.Point(x[0], x[1]), zIndex) for x in positionList[currentIndexes]
+            ]
             containmentList[currentIndexes] = currentContainment
 
         return containmentList
 
-    def get_overlapping_features(self, featuresToCheck: List['SpatialFeature']
-                                 ) -> List['SpatialFeature']:
-        """ Determine which features within the provided list overlap with this
+    def get_overlapping_features(self, featuresToCheck: List["SpatialFeature"]) -> List["SpatialFeature"]:
+        """Determine which features within the provided list overlap with this
         feature.
 
         Args:
@@ -317,8 +320,7 @@ class SpatialFeature(object):
         areas = [self.intersection(x) for x in featuresToCheck]
         overlapping = [featuresToCheck[i] for i, x in enumerate(areas) if x > 0]
         benchmark = self.intersection(self)
-        contained = [x for x in overlapping if
-                     x.intersection(self) == benchmark]
+        contained = [x for x in overlapping if x.intersection(self) == benchmark]
         if len(contained) > 1:
             overlapping = []
         else:
@@ -335,22 +337,17 @@ class SpatialFeature(object):
 
     def to_json_dict(self) -> Dict:
         return {
-            'fov': self._fov,
-            'id': self._uniqueID,
-            'z_coordinates': self._zCoordinates.tolist(),
-            'boundaries': [[geometry.mapping(y) for y in x]
-                           for x in self.get_boundaries()]
+            "fov": self._fov,
+            "id": self._uniqueID,
+            "z_coordinates": self._zCoordinates.tolist(),
+            "boundaries": [[geometry.mapping(y) for y in x] for x in self.get_boundaries()],
         }
 
     @staticmethod
     def from_json_dict(jsonIn: Dict):
-        boundaries = [[geometry.shape(y) for y in x]
-                      for x in jsonIn['boundaries']]
+        boundaries = [[geometry.shape(y) for y in x] for x in jsonIn["boundaries"]]
 
-        return SpatialFeature(boundaries,
-                              jsonIn['fov'],
-                              np.array(jsonIn['z_coordinates']),
-                              jsonIn['id'])
+        return SpatialFeature(boundaries, jsonIn["fov"], np.array(jsonIn["z_coordinates"]), jsonIn["id"])
 
 
 class SpatialFeatureDB(object):
@@ -409,58 +406,48 @@ class HDF5SpatialFeatureDB(SpatialFeatureDB):
         super().__init__(dataSet, analysisTask)
 
     @staticmethod
-    def _save_geometry_to_hdf5_group(h5Group: h5py.Group,
-                                     polygon: geometry.Polygon) -> None:
+    def _save_geometry_to_hdf5_group(h5Group: h5py.Group, polygon: geometry.Polygon) -> None:
         geometryDict = geometry.mapping(polygon)
-        h5Group.attrs['type'] = np.string_(geometryDict['type'])
-        h5Group['coordinates'] = np.array(geometryDict['coordinates'])
+        h5Group.attrs["type"] = np.string_(geometryDict["type"])
+        h5Group["coordinates"] = np.array(geometryDict["coordinates"])
 
     @staticmethod
-    def _save_feature_to_hdf5_group(h5Group: h5py.Group,
-                                    feature: SpatialFeature,
-                                    fov: int) -> None:
+    def _save_feature_to_hdf5_group(h5Group: h5py.Group, feature: SpatialFeature, fov: int) -> None:
         featureKey = str(feature.get_feature_id())
         featureGroup = h5Group.create_group(featureKey)
-        featureGroup.attrs['id'] = np.string_(feature.get_feature_id())
-        featureGroup.attrs['fov'] = fov
-        featureGroup.attrs['bounding_box'] = \
-            np.array(feature.get_bounding_box())
-        featureGroup.attrs['volume'] = feature.get_volume()
-        featureGroup['z_coordinates'] = feature.get_z_coordinates()
+        featureGroup.attrs["id"] = np.string_(feature.get_feature_id())
+        featureGroup.attrs["fov"] = fov
+        featureGroup.attrs["bounding_box"] = np.array(feature.get_bounding_box())
+        featureGroup.attrs["volume"] = feature.get_volume()
+        featureGroup["z_coordinates"] = feature.get_z_coordinates()
 
         for i, bSet in enumerate(feature.get_boundaries()):
-            zBoundaryGroup = featureGroup.create_group('zIndex_' + str(i))
+            zBoundaryGroup = featureGroup.create_group("zIndex_" + str(i))
             for j, b in enumerate(bSet):
-                geometryGroup = zBoundaryGroup.create_group('p_' + str(j))
-                HDF5SpatialFeatureDB._save_geometry_to_hdf5_group(
-                    geometryGroup, b)
+                geometryGroup = zBoundaryGroup.create_group("p_" + str(j))
+                HDF5SpatialFeatureDB._save_geometry_to_hdf5_group(geometryGroup, b)
 
     @staticmethod
     def _load_geometry_from_hdf5_group(h5Group: h5py.Group):
-        geometryDict = {'type': h5Group.attrs['type'].decode(),
-                        'coordinates': np.array(h5Group['coordinates'])}
+        geometryDict = {"type": h5Group.attrs["type"].decode(), "coordinates": np.array(h5Group["coordinates"])}
 
         return geometry.shape(geometryDict)
 
     @staticmethod
     def _load_feature_from_hdf5_group(h5Group):
-        zCount = len([x for x in h5Group.keys() if x.startswith('zIndex_')])
+        zCount = len([x for x in h5Group.keys() if x.startswith("zIndex_")])
         boundaryList = []
         for z in range(zCount):
             zBoundaryList = []
-            zGroup = h5Group['zIndex_' + str(z)]
-            pCount = len([x for x in zGroup.keys() if x[:2] == 'p_'])
+            zGroup = h5Group["zIndex_" + str(z)]
+            pCount = len([x for x in zGroup.keys() if x[:2] == "p_"])
             for p in range(pCount):
-                zBoundaryList.append(
-                    HDF5SpatialFeatureDB._load_geometry_from_hdf5_group(
-                        zGroup['p_' + str(p)]))
+                zBoundaryList.append(HDF5SpatialFeatureDB._load_geometry_from_hdf5_group(zGroup["p_" + str(p)]))
             boundaryList.append(zBoundaryList)
 
         loadedFeature = SpatialFeature(
-            boundaryList,
-            h5Group.attrs['fov'],
-            np.array(h5Group['z_coordinates']),
-            int(h5Group.attrs['id']))
+            boundaryList, h5Group.attrs["fov"], np.array(h5Group["z_coordinates"]), int(h5Group.attrs["id"])
+        )
 
         return loadedFeature
 
@@ -468,36 +455,27 @@ class HDF5SpatialFeatureDB(SpatialFeatureDB):
         if fov is None:
             uniqueFOVs = np.unique([f.get_fov() for f in features])
             for currentFOV in uniqueFOVs:
-                currentFeatures = [f for f in features
-                                   if f.get_fov() == currentFOV]
+                currentFeatures = [f for f in features if f.get_fov() == currentFOV]
                 self.write_features(currentFeatures, currentFOV)
 
         else:
-            with self._dataSet.open_hdf5_file(
-                    'a', 'feature_data', self._analysisTask, fov, 'features') \
-                    as f:
-                featureGroup = f.require_group('featuredata')
-                featureGroup.attrs['version'] = merlin.version()
+            with self._dataSet.open_hdf5_file("a", "feature_data", self._analysisTask, fov, "features") as f:
+                featureGroup = f.require_group("featuredata")
+                featureGroup.attrs["version"] = merlin.version()
                 for currentFeature in features:
-                    self._save_feature_to_hdf5_group(featureGroup,
-                                                     currentFeature,
-                                                     fov)
+                    self._save_feature_to_hdf5_group(featureGroup, currentFeature, fov)
 
     def read_features(self, fov: int = None) -> List[SpatialFeature]:
         if fov is None:
-            featureList = [f for x in self._dataSet.get_fovs()
-                           for f in self.read_features(x)]
+            featureList = [f for x in self._dataSet.get_fovs() for f in self.read_features(x)]
             return featureList
 
         featureList = []
         try:
-            with self._dataSet.open_hdf5_file('r', 'feature_data',
-                                              self._analysisTask, fov,
-                                              'features') as f:
-                featureGroup = f.require_group('featuredata')
+            with self._dataSet.open_hdf5_file("r", "feature_data", self._analysisTask, fov, "features") as f:
+                featureGroup = f.require_group("featuredata")
                 for k in featureGroup.keys():
-                    featureList.append(
-                        self._load_feature_from_hdf5_group(featureGroup[k]))
+                    featureList.append(self._load_feature_from_hdf5_group(featureGroup[k]))
         except FileNotFoundError:
             pass
 
@@ -508,11 +486,10 @@ class HDF5SpatialFeatureDB(SpatialFeatureDB):
             for f in self._dataSet.get_fovs():
                 self.empty_database(f)
 
-        self._dataSet.delete_hdf5_file('feature_data', self._analysisTask,
-                                       fov, 'features')
+        self._dataSet.delete_hdf5_file("feature_data", self._analysisTask, fov, "features")
 
     def read_feature_metadata(self, fov: int = None) -> pandas.DataFrame:
-        """ Get the metadata for the features stored within this feature
+        """Get the metadata for the features stored within this feature
         database.
 
         Args:
@@ -524,38 +501,30 @@ class HDF5SpatialFeatureDB(SpatialFeatureDB):
             Coordinates are in microns.
         """
         if fov is None:
-            finalDF = pandas.concat([self.read_feature_metadata(x)
-                                     for x in self._dataSet.get_fovs()], 0)
+            finalDF = pandas.concat([self.read_feature_metadata(x) for x in self._dataSet.get_fovs()], 0)
 
         else:
             try:
-                with self._dataSet.open_hdf5_file('r', 'feature_data',
-                                                  self._analysisTask, fov,
-                                                  'features') as f:
+                with self._dataSet.open_hdf5_file("r", "feature_data", self._analysisTask, fov, "features") as f:
                     allAttrKeys = []
                     allAttrValues = []
-                    for key in f['featuredata'].keys():
-                        attrNames = list(f['featuredata'][key].attrs.keys())
-                        attrValues = list(f['featuredata'][key].attrs.values())
+                    for key in f["featuredata"].keys():
+                        attrNames = list(f["featuredata"][key].attrs.keys())
+                        attrValues = list(f["featuredata"][key].attrs.values())
                         allAttrKeys.append(attrNames)
                         allAttrValues.append(attrValues)
 
                     columns = list(np.unique(allAttrKeys))
                     df = pandas.DataFrame(data=allAttrValues, columns=columns)
-                    finalDF = df.loc[:, ['fov', 'volume']].copy(deep=True)
-                    finalDF.index = df['id'].str.decode(encoding='utf-8'
-                                                        ).values.tolist()
-                    boundingBoxDF = pandas.DataFrame(
-                        df['bounding_box'].values.tolist(),
-                        index=finalDF.index)
-                    finalDF['center_x'] = \
-                        (boundingBoxDF[0] + boundingBoxDF[2]) / 2
-                    finalDF['center_y'] = \
-                        (boundingBoxDF[1] + boundingBoxDF[3]) / 2
-                    finalDF['min_x'] = boundingBoxDF[0]
-                    finalDF['max_x'] = boundingBoxDF[2]
-                    finalDF['min_y'] = boundingBoxDF[1]
-                    finalDF['max_y'] = boundingBoxDF[3]
+                    finalDF = df.loc[:, ["fov", "volume"]].copy(deep=True)
+                    finalDF.index = df["id"].str.decode(encoding="utf-8").values.tolist()
+                    boundingBoxDF = pandas.DataFrame(df["bounding_box"].values.tolist(), index=finalDF.index)
+                    finalDF["center_x"] = (boundingBoxDF[0] + boundingBoxDF[2]) / 2
+                    finalDF["center_y"] = (boundingBoxDF[1] + boundingBoxDF[3]) / 2
+                    finalDF["min_x"] = boundingBoxDF[0]
+                    finalDF["max_x"] = boundingBoxDF[2]
+                    finalDF["min_y"] = boundingBoxDF[1]
+                    finalDF["max_y"] = boundingBoxDF[3]
             except FileNotFoundError:
                 return pandas.DataFrame()
 
@@ -576,10 +545,10 @@ class JSONSpatialFeatureDB(SpatialFeatureDB):
             raise NotImplementedError
 
         try:
-            existingFeatures = [SpatialFeature.from_json_dict(x)
-                                for x
-                                in self._dataSet.load_json_analysis_result(
-                    'feature_data', self._analysisTask, fov, 'features')]
+            existingFeatures = [
+                SpatialFeature.from_json_dict(x)
+                for x in self._dataSet.load_json_analysis_result("feature_data", self._analysisTask, fov, "features")
+            ]
 
             existingIDs = set([x.get_feature_id() for x in existingFeatures])
 
@@ -592,17 +561,16 @@ class JSONSpatialFeatureDB(SpatialFeatureDB):
         except FileNotFoundError:
             featuresAsJSON = [f.to_json_dict() for f in features]
 
-        self._dataSet.save_json_analysis_result(
-            featuresAsJSON, 'feature_data', self._analysisTask,
-            fov, 'features')
+        self._dataSet.save_json_analysis_result(featuresAsJSON, "feature_data", self._analysisTask, fov, "features")
 
     def read_features(self, fov: int = None) -> List[SpatialFeature]:
         if fov is None:
             raise NotImplementedError
 
-        features = [SpatialFeature.from_json_dict(x)
-                    for x in self._dataSet.load_json_analysis_result(
-                'feature_metadata', self._analysisTask, fov, 'features')]
+        features = [
+            SpatialFeature.from_json_dict(x)
+            for x in self._dataSet.load_json_analysis_result("feature_metadata", self._analysisTask, fov, "features")
+        ]
 
         return features
 
@@ -612,13 +580,15 @@ class JSONSpatialFeatureDB(SpatialFeatureDB):
     @staticmethod
     def _extract_feature_metadata(feature: SpatialFeature) -> Dict:
         boundingBox = feature.get_bounding_box()
-        return {'fov': feature.get_fov(),
-                'featureID': feature.get_feature_id(),
-                'bounds_x1': boundingBox[0],
-                'bounds_y1': boundingBox[1],
-                'bounds_x2': boundingBox[2],
-                'bounds_y2': boundingBox[3],
-                'volume': feature.get_volume()}
+        return {
+            "fov": feature.get_fov(),
+            "featureID": feature.get_feature_id(),
+            "bounds_x1": boundingBox[0],
+            "bounds_y1": boundingBox[1],
+            "bounds_x2": boundingBox[2],
+            "bounds_y2": boundingBox[3],
+            "volume": feature.get_volume(),
+        }
 
 
 def simple_clean_cells(cells: List) -> List:
@@ -632,20 +602,17 @@ def simple_clean_cells(cells: List) -> List:
         List of spatial features
 
     """
-    return [cell for cell in cells
-            if len(cell.get_bounding_box()) == 4 and cell.get_volume() > 0]
+    return [cell for cell in cells if len(cell.get_bounding_box()) == 4 and cell.get_volume() > 0]
 
 
-def append_cells_to_spatial_tree(tree: rtree.index.Index,
-                                 cells: List, idToNum: Dict):
+def append_cells_to_spatial_tree(tree: rtree.index.Index, cells: List, idToNum: Dict):
     for element in cells:
-        tree.insert(idToNum[element.get_feature_id()],
-                    element.get_bounding_box(), obj=element)
+        tree.insert(idToNum[element.get_feature_id()], element.get_bounding_box(), obj=element)
 
 
-def construct_tree(cells: List,
-                   spatialIndex: rtree.index.Index = rtree.index.Index(),
-                   count: int = 0, idToNum: Dict = dict()):
+def construct_tree(
+    cells: List, spatialIndex: rtree.index.Index = rtree.index.Index(), count: int = 0, idToNum: Dict = dict()
+):
     """
     Builds or adds to an rtree with a list of cells
 
@@ -689,8 +656,7 @@ def return_overlapping_cells(currentCell, cells: List):
     areas = [currentCell.intersection(x) for x in cells]
     overlapping = [cells[i] for i, x in enumerate(areas) if x > 0]
     benchmark = currentCell.intersection(currentCell)
-    contained = [x for x in overlapping if
-                 x.intersection(currentCell) == benchmark]
+    contained = [x for x in overlapping if x.intersection(currentCell) == benchmark]
     if len(contained) > 1:
         overlapping = []
     else:
@@ -723,44 +689,36 @@ def construct_graph(graph, cells, spatialTree, currentFOV, allFOVs, fovBoxes):
         A graph updated to include cells from the current fov
     """
 
-    fovIntersections = sorted([i for i, x in enumerate(fovBoxes) if
-                               fovBoxes[currentFOV].intersects(x)])
+    fovIntersections = sorted([i for i, x in enumerate(fovBoxes) if fovBoxes[currentFOV].intersects(x)])
 
     coords = [x.centroid.coords.xy for x in fovBoxes]
     xcoords = [x[0][0] for x in coords]
     ycoords = [x[1][0] for x in coords]
-    coordsDF = pandas.DataFrame(data=np.array(list(zip(xcoords, ycoords))),
-                                index=allFOVs,
-                                columns=['centerX', 'centerY'])
-    fovTree = cKDTree(data=coordsDF.loc[fovIntersections,
-                                        ['centerX', 'centerY']].values)
+    coordsDF = pandas.DataFrame(
+        data=np.array(list(zip(xcoords, ycoords))), index=allFOVs, columns=["centerX", "centerY"]
+    )
+    fovTree = cKDTree(data=coordsDF.loc[fovIntersections, ["centerX", "centerY"]].values)
     for cell in cells:
-        overlappingCells = spatialTree.intersection(
-            cell.get_bounding_box(), objects=True)
+        overlappingCells = spatialTree.intersection(cell.get_bounding_box(), objects=True)
         toCheck = [x.object for x in overlappingCells]
-        cellsToConsider = return_overlapping_cells(
-            cell, toCheck)
+        cellsToConsider = return_overlapping_cells(cell, toCheck)
         if len(cellsToConsider) == 0:
             pass
         else:
             for cellToConsider in cellsToConsider:
-                xmin, ymin, xmax, ymax =\
-                    cellToConsider.get_bounding_box()
+                xmin, ymin, xmax, ymax = cellToConsider.get_bounding_box()
                 xCenter = (xmin + xmax) / 2
                 yCenter = (ymin + ymax) / 2
                 [d, i] = fovTree.query(np.array([xCenter, yCenter]))
-                assignedFOV = coordsDF.loc[fovIntersections, :]\
-                    .index.values.tolist()[i]
+                assignedFOV = coordsDF.loc[fovIntersections, :].index.values.tolist()[i]
                 if cellToConsider.get_feature_id() not in graph.nodes:
-                    graph.add_node(cellToConsider.get_feature_id(),
-                                   originalFOV=cellToConsider.get_fov(),
-                                   assignedFOV=assignedFOV)
+                    graph.add_node(
+                        cellToConsider.get_feature_id(), originalFOV=cellToConsider.get_fov(), assignedFOV=assignedFOV
+                    )
             if len(cellsToConsider) > 1:
                 for cellToConsider1 in cellsToConsider:
-                    if cellToConsider1.get_feature_id() !=\
-                            cell.get_feature_id():
-                        graph.add_edge(cell.get_feature_id(),
-                                       cellToConsider1.get_feature_id())
+                    if cellToConsider1.get_feature_id() != cell.get_feature_id():
+                        graph.add_edge(cell.get_feature_id(), cellToConsider1.get_feature_id())
     return graph
 
 
@@ -787,23 +745,21 @@ def remove_overlapping_cells(graph):
     connectedComponents = [list(x) for x in connectedComponents]
     for component in connectedComponents:
         if len(component) == 1:
-            originalFOV = graph.nodes[component[0]]['originalFOV']
-            assignedFOV = graph.nodes[component[0]]['assignedFOV']
+            originalFOV = graph.nodes[component[0]]["originalFOV"]
+            assignedFOV = graph.nodes[component[0]]["assignedFOV"]
             cleanedCells.append([component[0], originalFOV, assignedFOV])
         if len(component) > 1:
             sg = nx.subgraph(graph, component)
             verts = list(nx.articulation_points(sg))
             if len(verts) > 0:
-                sg = nx.subgraph(graph,
-                                 [x for x in component if x not in verts])
+                sg = nx.subgraph(graph, [x for x in component if x not in verts])
             allEdges = [[k, v] for k, v in nx.degree(sg)]
             sortedEdges = sorted(allEdges, key=lambda x: x[1], reverse=True)
             maxEdges = sortedEdges[0][1]
             while maxEdges > 0:
                 sg = nx.subgraph(graph, [x[0] for x in sortedEdges[1:]])
                 allEdges = [[k, v] for k, v in nx.degree(sg)]
-                sortedEdges = sorted(allEdges, key=lambda x: x[1],
-                                     reverse=True)
+                sortedEdges = sorted(allEdges, key=lambda x: x[1], reverse=True)
                 maxEdges = sortedEdges[0][1]
             keptComponents = list(sg.nodes())
             cellIDs = []
@@ -811,12 +767,10 @@ def remove_overlapping_cells(graph):
             assignedFOVs = []
             for c in keptComponents:
                 cellIDs.append(c)
-                originalFOVs.append(graph.nodes[c]['originalFOV'])
-                assignedFOVs.append(graph.nodes[c]['assignedFOV'])
+                originalFOVs.append(graph.nodes[c]["originalFOV"])
+                assignedFOVs.append(graph.nodes[c]["assignedFOV"])
             listOfLists = list(zip(cellIDs, originalFOVs, assignedFOVs))
             listOfLists = [list(x) for x in listOfLists]
             cleanedCells = cleanedCells + listOfLists
-    cleanedCellsDF = pandas.DataFrame(cleanedCells,
-                                      columns=['cell_id', 'originalFOV',
-                                               'assignedFOV'])
+    cleanedCellsDF = pandas.DataFrame(cleanedCells, columns=["cell_id", "originalFOV", "assignedFOV"])
     return cleanedCellsDF

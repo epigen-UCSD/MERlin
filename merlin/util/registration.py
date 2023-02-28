@@ -6,8 +6,8 @@ from scipy import signal
 
 
 def extract_control_points(
-        referencePoints: np.ndarray, movingPoints: np.ndarray,
-        gridSpacing: float=0.5) -> Tuple[np.ndarray, np.ndarray]:
+    referencePoints: np.ndarray, movingPoints: np.ndarray, gridSpacing: float = 0.5
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     If fewer than 10 points are provided for either the reference or the moving
     list, this returns no points.
@@ -28,33 +28,28 @@ def extract_control_points(
 
     neighbors = NearestNeighbors(n_neighbors=10)
     neighbors.fit(referencePoints)
-    distances, indexes = neighbors.kneighbors(
-        movingPoints, return_distance=True)
-    differences = [[movingPoints[i] - referencePoints[x]
-                    for x in indexes[i]]
-                   for i in range(len(movingPoints))]
+    distances, indexes = neighbors.kneighbors(movingPoints, return_distance=True)
+    differences = [[movingPoints[i] - referencePoints[x] for x in indexes[i]] for i in range(len(movingPoints))]
     counts, xedges, yedges = np.histogram2d(
-        [x[0] for y in differences for x in y],
-        [x[1] for y in differences for x in y],
-        bins=edges)
+        [x[0] for y in differences for x in y], [x[1] for y in differences for x in y], bins=edges
+    )
     maxIndex = np.unravel_index(counts.argmax(), counts.shape)
     offset = (xedges[maxIndex[0]], yedges[maxIndex[1]])
 
     distancesShifted, indexesShifted = neighbors.kneighbors(
-        movingPoints - np.tile(offset, (movingPoints.shape[0], 1)),
-        return_distance=True)
+        movingPoints - np.tile(offset, (movingPoints.shape[0], 1)), return_distance=True
+    )
 
     controlIndexes = [x[0] < gridSpacing for x in distancesShifted]
-    referenceControls = np.array([referencePoints[x[0]]
-                                  for x in indexesShifted[controlIndexes]])
+    referenceControls = np.array([referencePoints[x[0]] for x in indexesShifted[controlIndexes]])
     movingControls = movingPoints[controlIndexes, :]
 
     return referenceControls, movingControls
 
 
 def estimate_transform_from_points(
-        referencePoints: np.ndarray, movingPoints: np.ndarray) \
-        -> transform.EuclideanTransform:
+    referencePoints: np.ndarray, movingPoints: np.ndarray
+) -> transform.EuclideanTransform:
     """
 
     If fewer than two points are provided, this will return the identity
@@ -103,15 +98,15 @@ def radial_center(imageIn) -> Tuple[float, float]:
 
     imageIn = imageIn.astype(float)
 
-    dIdu = imageIn[0:Ny - 1, 1:Nx] - imageIn[1:Ny, 0:Nx - 1];
-    dIdv = imageIn[0:Ny - 1, 0:Nx - 1] - imageIn[1:Ny, 1:Nx];
+    dIdu = imageIn[0 : Ny - 1, 1:Nx] - imageIn[1:Ny, 0 : Nx - 1]
+    dIdv = imageIn[0 : Ny - 1, 0 : Nx - 1] - imageIn[1:Ny, 1:Nx]
 
     h = np.ones((3, 3)) / 9
-    fdu = signal.convolve2d(dIdu, h, 'same')
-    fdv = signal.convolve2d(dIdv, h, 'same')
+    fdu = signal.convolve2d(dIdu, h, "same")
+    fdv = signal.convolve2d(dIdv, h, "same")
     dImag2 = np.multiply(fdu, fdu) + np.multiply(fdv, fdv)
 
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         m = np.divide(-(fdv + fdu), (fdu - fdv))
 
         if np.any(np.isnan(m)):
@@ -132,9 +127,7 @@ def radial_center(imageIn) -> Tuple[float, float]:
     sdI2 = np.sum(dImag2)
     xcentroid = np.sum(np.sum(np.multiply(dImag2, xm))) / sdI2
     ycentroid = np.sum(np.multiply(dImag2, ym)) / sdI2
-    w = np.divide(dImag2, np.sqrt(
-        (xm - xcentroid) * (xm - xcentroid) + (ym - ycentroid) * (
-                    ym - ycentroid)))
+    w = np.divide(dImag2, np.sqrt((xm - xcentroid) * (xm - xcentroid) + (ym - ycentroid) * (ym - ycentroid)))
 
     xc, yc = lsradialcenterfit(m, b, w)
 
@@ -147,6 +140,5 @@ def radial_center(imageIn) -> Tuple[float, float]:
 def refine_position(image, x, y, cropSize=4) -> Tuple[float, float]:
     # TODO this would be more intuitive it it retransformed the output
     # coordinates to the original image coordinates
-    subImage = image[int(y + 2 - cropSize):int(y + cropSize),
-                     int(x - cropSize + 2):int(x + cropSize)]
+    subImage = image[int(y + 2 - cropSize) : int(y + cropSize), int(x - cropSize + 2) : int(x + cropSize)]
     return radial_center(subImage)

@@ -18,13 +18,12 @@ class GlobalAlignment(analysistask.AnalysisTask):
     different field of views relative to each other in order to construct
     a global alignment.
     """
+
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
     @abstractmethod
-    def fov_coordinates_to_global(
-            self, fov: int, fovCoordinates: Tuple[float, float]) \
-            -> Tuple[float, float]:
+    def fov_coordinates_to_global(self, fov: int, fovCoordinates: Tuple[float, float]) -> Tuple[float, float]:
         """Calculates the global coordinates based on the local coordinates
         in the specified field of view.
 
@@ -40,8 +39,8 @@ class GlobalAlignment(analysistask.AnalysisTask):
 
     @abstractmethod
     def global_coordinates_to_fov(
-            self, fov: int, globalCoordinates: List[Tuple[float, float]]) \
-            -> List[Tuple[float, float]]:
+        self, fov: int, globalCoordinates: List[Tuple[float, float]]
+    ) -> List[Tuple[float, float]]:
         """Calculates the fov pixel coordinates for a list of global coordinates
         in the specified field of view.
 
@@ -81,8 +80,7 @@ class GlobalAlignment(analysistask.AnalysisTask):
         pass
 
     @abstractmethod
-    def fov_coordinate_array_to_global(self, fov: int,
-                                       fovCoordArray: np.array) -> np.array:
+    def fov_coordinate_array_to_global(self, fov: int, fovCoordArray: np.array) -> np.array:
         """A bulk transformation of a list of fov coordinates to
            global coordinates.
         Args:
@@ -133,17 +131,19 @@ class SimpleGlobalAlignment(GlobalAlignment):
         fovStart = self.dataSet.get_fov_offset(fov)
         micronsPerPixel = self.dataSet.get_microns_per_pixel()
         if len(fovCoordinates) == 2:
-            return (fovStart[0] + fovCoordinates[0]*micronsPerPixel,
-                    fovStart[1] + fovCoordinates[1]*micronsPerPixel)
+            return (
+                fovStart[0] + fovCoordinates[0] * micronsPerPixel,
+                fovStart[1] + fovCoordinates[1] * micronsPerPixel,
+            )
         elif len(fovCoordinates) == 3:
             zPositions = self.dataSet.get_z_positions()
-            return (np.interp(fovCoordinates[0], np.arange(len(zPositions)),
-                              zPositions),
-                    fovStart[0] + fovCoordinates[1]*micronsPerPixel,
-                    fovStart[1] + fovCoordinates[2]*micronsPerPixel)
+            return (
+                np.interp(fovCoordinates[0], np.arange(len(zPositions)), zPositions),
+                fovStart[0] + fovCoordinates[1] * micronsPerPixel,
+                fovStart[1] + fovCoordinates[2] * micronsPerPixel,
+            )
 
-    def fov_coordinate_array_to_global(self, fov: int,
-                                       fovCoordArray: np.array) -> np.array:
+    def fov_coordinate_array_to_global(self, fov: int, fovCoordArray: np.array) -> np.array:
         tForm = self.fov_to_global_transform(fov)
         toGlobal = np.ones(fovCoordArray.shape)
         toGlobal[:, [0, 1]] = fovCoordArray[:, [1, 2]]
@@ -162,9 +162,11 @@ class SimpleGlobalAlignment(GlobalAlignment):
             a list of four floats, representing the xmin, xmax, ymin, ymax
         """
 
-        return [x for y in (self.fov_coordinates_to_global(fov, (0, 0)),
-                            self.fov_coordinates_to_global(fov, (2048, 2048)))
-                for x in y]
+        return [
+            x
+            for y in (self.fov_coordinates_to_global(fov, (0, 0)), self.fov_coordinates_to_global(fov, (2048, 2048)))
+            for x in y
+        ]
 
     def global_coordinates_to_fov(self, fov, globalCoordinates):
         tform = np.linalg.inv(self.fov_to_global_transform(fov))
@@ -172,6 +174,7 @@ class SimpleGlobalAlignment(GlobalAlignment):
         def convert_coordinate(coordinateIn):
             coords = np.array([coordinateIn[0], coordinateIn[1], 1])
             return np.matmul(tform, coords).astype(int)[:2]
+
         pixels = [convert_coordinate(x) for x in globalCoordinates]
         return pixels
 
@@ -179,16 +182,13 @@ class SimpleGlobalAlignment(GlobalAlignment):
         micronsPerPixel = self.dataSet.get_microns_per_pixel()
         globalStart = self.fov_coordinates_to_global(fov, (0, 0))
 
-        return np.float32([[micronsPerPixel, 0, globalStart[0]],
-                           [0, micronsPerPixel, globalStart[1]],
-                           [0, 0, 1]])
+        return np.float32([[micronsPerPixel, 0, globalStart[0]], [0, micronsPerPixel, globalStart[1]], [0, 0, 1]])
 
     def get_global_extent(self):
         fovSize = self.dataSet.get_image_dimensions()
-        fovBounds = [self.fov_coordinates_to_global(x, (0, 0))
-                     for x in self.dataSet.get_fovs()] + \
-                    [self.fov_coordinates_to_global(x, fovSize)
-                     for x in self.dataSet.get_fovs()]
+        fovBounds = [self.fov_coordinates_to_global(x, (0, 0)) for x in self.dataSet.get_fovs()] + [
+            self.fov_coordinates_to_global(x, fovSize) for x in self.dataSet.get_fovs()
+        ]
 
         minX = np.min([x[0] for x in fovBounds])
         maxX = np.max([x[0] for x in fovBounds])
@@ -228,8 +228,7 @@ class CorrelationGlobalAlignment(GlobalAlignment):
     def get_global_extent(self):
         raise NotImplementedError
 
-    def fov_coordinate_array_to_global(self, fov: int,
-                                       fovCoordArray: np.array) -> np.array:
+    def fov_coordinate_array_to_global(self, fov: int, fovCoordArray: np.array) -> np.array:
         raise NotImplementedError
 
     @staticmethod
@@ -238,26 +237,29 @@ class CorrelationGlobalAlignment(GlobalAlignment):
         equal dimensions.
         """
 
-        dx = min(x1+width, x2+width) - max(x1, x2)
-        dy = min(y1+height, y2+height) - max(y1, y2)
+        dx = min(x1 + width, x2 + width) - max(x1, x2)
+        dy = min(y1 + height, y2 + height) - max(y1, y2)
 
         if dx > 0 and dy > 0:
-            return dx*dy
+            return dx * dy
         else:
             return 0
 
     def _get_overlapping_regions(self, fov: int, minArea: int = 2000):
-        """Get a list of all the fovs that overlap with the specified fov.
-        """
+        """Get a list of all the fovs that overlap with the specified fov."""
         positions = self.dataSet.get_stage_positions()
         pixelToMicron = self.dataSet.get_microns_per_pixel()
-        fovMicrons = [x*pixelToMicron
-                      for x in self.dataSet.get_image_dimensions()]
+        fovMicrons = [x * pixelToMicron for x in self.dataSet.get_image_dimensions()]
         fovPosition = positions.loc[fov]
-        overlapAreas = [i for i, p in positions.iterrows()
-                        if self._calculate_overlap_area(
-                p['X'], p['Y'], fovPosition['X'], fovPosition['Y'],
-                fovMicrons[0], fovMicrons[1]) > minArea and i != fov]
+        overlapAreas = [
+            i
+            for i, p in positions.iterrows()
+            if self._calculate_overlap_area(
+                p["X"], p["Y"], fovPosition["X"], fovPosition["Y"], fovMicrons[0], fovMicrons[1]
+            )
+            > minArea
+            and i != fov
+        ]
 
         return overlapAreas
 
@@ -297,9 +299,9 @@ class UCSDEpigenGlobalAlignment(analysistask.AnalysisTask):
             return slice(None, math.trunc(overlap))
 
     def local_to_global_coordinates(self, x, y, fov):
-        #global_x = 220 * x / 2048 + np.array(self.positions.loc[fov]["y"])
-        #global_y = 220 * y / 2048 - np.array(self.positions.loc[fov]["x"])
-        #return global_x, global_y
+        # global_x = 220 * x / 2048 + np.array(self.positions.loc[fov]["y"])
+        # global_y = 220 * y / 2048 - np.array(self.positions.loc[fov]["x"])
+        # return global_x, global_y
         pass
 
     def find_fov_overlaps(self, get_trim: bool = False) -> List[list]:

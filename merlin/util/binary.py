@@ -57,7 +57,7 @@ def flip_bit(barcode: List[bool], bitIndex: int) -> List[bool]:
     bit.
 
     Args:
-        barcode: A binary array where the i'th entry corresponds with the 
+        barcode: A binary array where the i'th entry corresponds with the
             value of the i'th bit
         bitIndex: The index of the bit to reverse
     Returns:

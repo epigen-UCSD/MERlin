@@ -7,13 +7,11 @@ from merlin.core import analysistask
 
 
 class Executor(object):
-
     def __init__(self):
         super().__init__()
-    
+
     @abstractmethod
-    def run(self, task: analysistask.AnalysisTask, index: int=None,
-            rerunCompleted: bool=False) -> None:
+    def run(self, task: analysistask.AnalysisTask, index: int = None, rerunCompleted: bool = False) -> None:
         """Run an analysis task.
 
         This method will not run analysis tasks that are already currently
@@ -34,17 +32,15 @@ class Executor(object):
 
 
 class LocalExecutor(Executor):
-
     def __init__(self, coreCount=None):
         super().__init__()
 
         if coreCount is None:
-            self.coreCount = int(multiprocessing.cpu_count()*0.7)
+            self.coreCount = int(multiprocessing.cpu_count() * 0.7)
         else:
             self.coreCount = coreCount
 
-    def run(self, task: analysistask.AnalysisTask, index: int=None,
-            rerunCompleted: bool=False) -> None:
+    def run(self, task: analysistask.AnalysisTask, index: int = None, rerunCompleted: bool = False) -> None:
         if task.is_complete() and not rerunCompleted:
             return
 
@@ -52,4 +48,3 @@ class LocalExecutor(Executor):
             task.run(index)
         else:
             task.run()
-

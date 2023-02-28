@@ -16,8 +16,7 @@ class ChromaticCorrector(ABC):
     """
 
     @abstractmethod
-    def transform_image(self, inputImage: np.ndarray, imageColor: str
-                        ) -> np.ndarray:
+    def transform_image(self, inputImage: np.ndarray, imageColor: str) -> np.ndarray:
         """Transform inputImage to the reference color.
 
         Args:
@@ -41,8 +40,7 @@ class IdentityChromaticCorrector(ChromaticCorrector):
     def __init__(self):
         pass
 
-    def transform_image(self, inputImage: np.ndarray, imageColor: str
-                        ) -> np.ndarray:
+    def transform_image(self, inputImage: np.ndarray, imageColor: str) -> np.ndarray:
         return inputImage
 
 
@@ -53,8 +51,9 @@ class RigidChromaticCorrector(ChromaticCorrector):
     matrices.
     """
 
-    def __init__(self, transformations: Dict[str, Dict[
-            str, transform.EuclideanTransform]], referenceColor: str=None):
+    def __init__(
+        self, transformations: Dict[str, Dict[str, transform.EuclideanTransform]], referenceColor: str = None
+    ):
         """Creates a new RigidChromaticCorrector that transforms images
         using the specified transformations.
 
@@ -69,8 +68,7 @@ class RigidChromaticCorrector(ChromaticCorrector):
         else:
             self.referenceColor = referenceColor
 
-    def transform_image(self, inputImage: np.ndarray, imageColor: str
-                        ) -> np.ndarray:
+    def transform_image(self, inputImage: np.ndarray, imageColor: str) -> np.ndarray:
         if imageColor not in self.transformations[self.referenceColor]:
             return inputImage
 
@@ -78,10 +76,6 @@ class RigidChromaticCorrector(ChromaticCorrector):
             return inputImage
 
         if len(inputImage.shape) == 3:
-            return np.array([self.transform_image(x, imageColor)
-                             for x in inputImage])
+            return np.array([self.transform_image(x, imageColor) for x in inputImage])
 
-        return transform.warp(
-            inputImage,
-            self.transformations[self.referenceColor][imageColor],
-            preserve_range=True)
+        return transform.warp(inputImage, self.transformations[self.referenceColor][imageColor], preserve_range=True)

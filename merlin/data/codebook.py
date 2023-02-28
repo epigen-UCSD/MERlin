@@ -9,7 +9,7 @@ import merlin
 
 
 def _parse_barcode_from_string(inputString):
-    return np.array([int(x) for x in inputString if x is not ' '])
+    return np.array([int(x) for x in inputString if x is not " "])
 
 
 class Codebook(object):
@@ -18,15 +18,14 @@ class Codebook(object):
     A Codebook stores the association of barcodes to genes.
     """
 
-    def __init__(self, dataSet, filePath, codebookIndex: int = 0,
-                 codebookName: str = None):
+    def __init__(self, dataSet, filePath, codebookIndex: int = 0, codebookName: str = None):
         """
         Create a new Codebook for the data in the specified data set.
 
         If filePath is not specified, a previously stored Codebook
         is loaded from the dataSet if it exists. If filePath is specified,
         the Codebook at the specified filePath is loaded and
-        stored in the dataSet, overwriting any previously stored 
+        stored in the dataSet, overwriting any previously stored
         Codebook.
         """
         self._dataSet = dataSet
@@ -34,8 +33,8 @@ class Codebook(object):
             filePath = os.sep.join([merlin.CODEBOOK_HOME, filePath])
 
         newVersion = True
-        with open(filePath, 'r') as f:
-            if 'version' in f.readline():
+        with open(filePath, "r") as f:
+            if "version" in f.readline():
                 newVersion = False
 
         if newVersion:
@@ -43,18 +42,19 @@ class Codebook(object):
         else:
             headerLength = 3
             barcodeData = pandas.read_csv(
-                filePath, header=headerLength, skipinitialspace=True,
-                usecols=['name', 'id', 'barcode'],
-                converters={'barcode': _parse_barcode_from_string})
-            with open(filePath, 'r') as inFile:
-                csvReader = csv.reader(inFile, delimiter=',')
-                header = [row for i, row in enumerate(csvReader)
-                          if i < headerLength]
+                filePath,
+                header=headerLength,
+                skipinitialspace=True,
+                usecols=["name", "id", "barcode"],
+                converters={"barcode": _parse_barcode_from_string},
+            )
+            with open(filePath, "r") as inFile:
+                csvReader = csv.reader(inFile, delimiter=",")
+                header = [row for i, row in enumerate(csvReader) if i < headerLength]
 
             bitNames = [x.strip() for x in header[2][1:]]
 
-            self._data = self._generate_codebook_dataframe(
-                    barcodeData, bitNames)
+            self._data = self._generate_codebook_dataframe(barcodeData, bitNames)
 
         if not codebookName:
             codebookName = os.path.splitext(os.path.basename(filePath))[0]
@@ -64,22 +64,25 @@ class Codebook(object):
 
     @staticmethod
     def _generate_codebook_dataframe(barcodeData, bitNames):
-        dfData = np.array([[currentRow['name'], currentRow['id']]
-                           + currentRow['barcode'].tolist()
-                           for i, currentRow in barcodeData.iterrows()])
-        df = pandas.DataFrame(dfData, columns=['name', 'id'] + bitNames)
-        df[bitNames] = df[bitNames].astype('uint8')
+        dfData = np.array(
+            [
+                [currentRow["name"], currentRow["id"]] + currentRow["barcode"].tolist()
+                for i, currentRow in barcodeData.iterrows()
+            ]
+        )
+        df = pandas.DataFrame(dfData, columns=["name", "id"] + bitNames)
+        df[bitNames] = df[bitNames].astype("uint8")
         return df
 
     def get_data(self) -> pandas.DataFrame:
-        """ Get the dataframe that contains the information for this codebook
+        """Get the dataframe that contains the information for this codebook
 
         Returns: The pandas dataframe
         """
         return self._data
 
     def get_barcode(self, index: int) -> List[bool]:
-        """ Get the barcode with the specified index.
+        """Get the barcode with the specified index.
 
         Args:
             index: the index of the barcode in the barcode list
@@ -88,7 +91,7 @@ class Codebook(object):
         """
         return [self._data.loc[index][n] for n in self.get_bit_names()]
 
-    def get_barcode_count(self) -> int: 
+    def get_barcode_count(self) -> int:
         """
         Get the number of barcodes in this codebook.
 
@@ -104,82 +107,79 @@ class Codebook(object):
         return len(self.get_bit_names())
 
     def get_bit_names(self) -> List[str]:
-        """ Get the names of the bits for this MERFISH data set.
+        """Get the names of the bits for this MERFISH data set.
 
         Returns:
             A list of the names of the bits in order from the lowest to highest
         """
-        return [s for s in self._data.columns if s not in ['name', 'id']]
+        return [s for s in self._data.columns if s not in ["name", "id"]]
 
     def get_barcodes(self, ignoreBlanks: bool = False) -> np.array:
-        """ Get the barcodes present in this codebook.
-        
+        """Get the barcodes present in this codebook.
+
         Args:
-            ignoreBlanks: flag indicating whether barcodes corresponding 
+            ignoreBlanks: flag indicating whether barcodes corresponding
                     to blanks should be included.
         Returns:
             A list of the barcodes represented as lists of bits.
         """
         bitNames = self.get_bit_names()
         if ignoreBlanks:
-            return np.array([[x[n] for n in bitNames] for i, x
-                             in self._data.iterrows()
-                             if 'BLANK' not in x['name'].upper()])
+            return np.array(
+                [[x[n] for n in bitNames] for i, x in self._data.iterrows() if "BLANK" not in x["name"].upper()]
+            )
         else:
-            return np.array([[x[n] for n in bitNames]
-                             for i, x in self._data.iterrows()])
+            return np.array([[x[n] for n in bitNames] for i, x in self._data.iterrows()])
 
     def get_coding_indexes(self) -> List[int]:
-        """ Get the barcode indexes that correspond with genes.
+        """Get the barcode indexes that correspond with genes.
 
         Returns:
-            A list of barcode indexes that correspond with genes and not 
+            A list of barcode indexes that correspond with genes and not
                     blanks
         """
-        return self._data[
-                ~self._data['name'].str.contains('Blank', case=False)].index
-    
+        return self._data[~self._data["name"].str.contains("Blank", case=False)].index
+
     def get_blank_indexes(self) -> List[int]:
-        """ Get the barcode indexes that do not correspond with genes.
+        """Get the barcode indexes that do not correspond with genes.
 
         Returns:
             A list of barcode indexes that correspond with blanks
         """
-        return self._data[
-                self._data['name'].str.contains('Blank', case=False)].index
+        return self._data[self._data["name"].str.contains("Blank", case=False)].index
 
     def get_gene_names(self) -> List[str]:
-        """" Get the names of the genes represented in this codebook.
+        """ " Get the names of the genes represented in this codebook.
 
         Returns:
             A list of the gene names. The list does not contain the names of
             the blanks.
         """
-        return self._data.loc[self.get_coding_indexes()]['name'].tolist()
+        return self._data.loc[self.get_coding_indexes()]["name"].tolist()
 
     def get_name_for_barcode_index(self, index: int) -> str:
-        """ Get the gene name for the barcode with the specified index.
+        """Get the gene name for the barcode with the specified index.
 
         Returns:
             The gene name
         """
-        return self._data.loc[index]['name']
+        return self._data.loc[index]["name"]
 
     def get_barcode_index_for_name(self, name: str) -> Union[int, None]:
-        """ Get the barcode index for the barcode with the specified name.
+        """Get the barcode index for the barcode with the specified name.
 
         Returns:
             The barcode index. If name appears more than once, the index of
             the first appearance is returned. If name is not in this codebook
             then None is returned.
         """
-        matches = self._data[self._data['name'].str.match('^' + name + '$')]
+        matches = self._data[self._data["name"].str.match("^" + name + "$")]
         if len(matches) == 0:
             return None
         return matches.index[0]
 
     def get_codebook_name(self) -> str:
-        """ Gets the name of this codebook
+        """Gets the name of this codebook
 
         Returns:
             The codebook name. This is the original file name of codebook.
@@ -187,7 +187,7 @@ class Codebook(object):
         return self._codebookName
 
     def get_codebook_index(self) -> int:
-        """ Get the index of this codebook
+        """Get the index of this codebook
 
         Returns:
             The codebook index. All codebooks associated with the same dataset

@@ -10,7 +10,7 @@ from typing import Tuple
 from merlin.util import matlab
 
 """
-This module contains utility functions for preparing imagmes for 
+This module contains utility functions for preparing imagmes for
 watershed segmentation.
 """
 
@@ -33,26 +33,22 @@ def extract_seeds(seedImageStackIn: np.ndarray) -> np.ndarray:
     """
     seedImages = seedImageStackIn.copy()
 
-    seedImages = ndimage.grey_erosion(
-        seedImages,
-        footprint=ndimage.morphology.generate_binary_structure(3, 1))
-    seedImages = np.array([cv2.erode(x, diskStruct,
-                                     borderType=cv2.BORDER_REFLECT)
-                           for x in seedImages])
+    seedImages = ndimage.grey_erosion(seedImages, footprint=ndimage.morphology.generate_binary_structure(3, 1))
+    seedImages = np.array([cv2.erode(x, diskStruct, borderType=cv2.BORDER_REFLECT) for x in seedImages])
 
     thresholdFilterSize = int(2 * np.floor(seedImages.shape[1] / 16) + 1)
-    seedMask = np.array([x < 1.1 * filters.threshold_local(
-        x, thresholdFilterSize, method='mean', mode='nearest')
-                         for x in seedImages])
+    seedMask = np.array(
+        [x < 1.1 * filters.threshold_local(x, thresholdFilterSize, method="mean", mode="nearest") for x in seedImages]
+    )
 
     seedImages[seedMask] = 0
 
     seeds = morphology.local_maxima(seedImages, allow_borders=True)
 
-    seeds = ndimage.morphology.binary_dilation(
-        seeds, structure=ndimage.morphology.generate_binary_structure(3, 1))
-    seeds = np.array([ndimage.morphology.binary_dilation(
-        x, structure=morphology.diamond(28)[9:48, 9:48]) for x in seeds])
+    seeds = ndimage.morphology.binary_dilation(seeds, structure=ndimage.morphology.generate_binary_structure(3, 1))
+    seeds = np.array(
+        [ndimage.morphology.binary_dilation(x, structure=morphology.diamond(28)[9:48, 9:48]) for x in seeds]
+    )
 
     return seeds
 
@@ -84,34 +80,28 @@ def separate_merged_seeds(seedsIn: np.ndarray) -> np.ndarray:
         if all([x < 2 for x in seedCounts]):
             goodFrames = [i for i, x in enumerate(seedCounts) if x == 1]
             goodProperties = [y for x in goodFrames for y in localProps[x]]
-            seedPositions = np.round([np.median(
-                [x.centroid for x in goodProperties], axis=0)]).astype(int)
+            seedPositions = np.round([np.median([x.centroid for x in goodProperties], axis=0)]).astype(int)
         else:
             goodFrames = [i for i, x in enumerate(seedCounts) if x > 1]
             goodProperties = [y for x in goodFrames for y in localProps[x]]
             goodCentroids = [x.centroid for x in goodProperties]
             km = kmedoids.kmedoids(
-                goodCentroids,
-                np.random.choice(np.arange(len(goodCentroids)),
-                                 size=np.max(seedCounts)))
+                goodCentroids, np.random.choice(np.arange(len(goodCentroids)), size=np.max(seedCounts))
+            )
             km.process()
-            seedPositions = np.round(
-                [goodCentroids[x] for x in km.get_medoids()]).astype(int)
+            seedPositions = np.round([goodCentroids[x] for x in km.get_medoids()]).astype(int)
 
         for s in seedPositions:
             for f in goodFrames:
                 seeds[f, s[0], s[1]] = 1
 
-    seeds = ndimage.morphology.binary_dilation(
-        seeds, structure=ndimage.morphology.generate_binary_structure(3, 1))
-    seeds = np.array([ndimage.morphology.binary_dilation(
-        x, structure=diskStruct) for x in seeds])
+    seeds = ndimage.morphology.binary_dilation(seeds, structure=ndimage.morphology.generate_binary_structure(3, 1))
+    seeds = np.array([ndimage.morphology.binary_dilation(x, structure=diskStruct) for x in seeds])
 
     return seeds
 
 
-def prepare_watershed_images(watershedImageStack: np.ndarray
-                             ) -> Tuple[np.ndarray, np.ndarray]:
+def prepare_watershed_images(watershedImageStack: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Prepare the given images as the input image for watershedding.
 
     A watershed mask is determined using an adaptive threshold and the watershed
@@ -127,15 +117,18 @@ def prepare_watershed_images(watershedImageStack: np.ndarray
     """
     filterSize = int(2 * np.floor(watershedImageStack.shape[1] / 16) + 1)
 
-    watershedMask = np.array([ndimage.morphology.binary_fill_holes(
-        x > 1.1 * filters.threshold_local(x, filterSize, method='mean',
-                                          mode='nearest'))
-        for x in watershedImageStack])
+    watershedMask = np.array(
+        [
+            ndimage.morphology.binary_fill_holes(
+                x > 1.1 * filters.threshold_local(x, filterSize, method="mean", mode="nearest")
+            )
+            for x in watershedImageStack
+        ]
+    )
 
-    normalizedWatershed = 1 - (watershedImageStack
-                               - np.min(watershedImageStack)) / \
-                          (np.max(watershedImageStack)
-                           - np.min(watershedImageStack))
+    normalizedWatershed = 1 - (watershedImageStack - np.min(watershedImageStack)) / (
+        np.max(watershedImageStack) - np.min(watershedImageStack)
+    )
     normalizedWatershed[np.invert(watershedMask)] = 1
 
     return normalizedWatershed, watershedMask

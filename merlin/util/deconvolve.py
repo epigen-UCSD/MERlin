@@ -25,8 +25,7 @@ def calculate_projectors(windowSize: int, sigmaG: float) -> list:
         A list containing the forward and backward projectors to use for
         Lucy-Richardson deconvolution.
     """
-    pf = matlab.matlab_gauss2D(shape=(windowSize, windowSize),
-                               sigma=sigmaG)
+    pf = matlab.matlab_gauss2D(shape=(windowSize, windowSize), sigma=sigmaG)
     pfFFT = np.fft.fft2(pf)
 
     # Wiener-Butterworth back projector.
@@ -37,7 +36,7 @@ def calculate_projectors(windowSize: int, sigmaG: float) -> list:
     n = 8
 
     # This is the cut-off frequency.
-    kc = 1.0/(0.5 * 2.355 * sigmaG)
+    kc = 1.0 / (0.5 * 2.355 * sigmaG)
 
     # FFT frequencies
     kv = np.fft.fftfreq(pfFFT.shape[0])
@@ -47,16 +46,16 @@ def calculate_projectors(windowSize: int, sigmaG: float) -> list:
         kx[i, :] = np.copy(kv)
 
     ky = np.transpose(kx)
-    kk = np.sqrt(kx*kx + ky*ky)
+    kk = np.sqrt(kx * kx + ky * ky)
 
     # Wiener filter
-    bWiener = pfFFT/(np.abs(pfFFT) * np.abs(pfFFT) + alpha)
+    bWiener = pfFFT / (np.abs(pfFFT) * np.abs(pfFFT) + alpha)
 
     # Buttersworth filter
-    eps = np.sqrt(1.0/(beta*beta) - 1)
+    eps = np.sqrt(1.0 / (beta * beta) - 1)
 
-    kkSqr = kk*kk/(kc*kc)
-    bBWorth = 1.0/np.sqrt(1.0 + eps * eps * np.power(kkSqr, n))
+    kkSqr = kk * kk / (kc * kc)
+    bBWorth = 1.0 / np.sqrt(1.0 + eps * eps * np.power(kkSqr, n))
 
     # Weiner-Butterworth back projector
     pbFFT = bWiener * bBWorth
@@ -67,10 +66,7 @@ def calculate_projectors(windowSize: int, sigmaG: float) -> list:
     return [pf, pb]
 
 
-def deconvolve_lucyrichardson(image: np.ndarray,
-                              windowSize: int,
-                              sigmaG: float,
-                              iterationCount: int) -> np.ndarray:
+def deconvolve_lucyrichardson(image: np.ndarray, windowSize: int, sigmaG: float, iterationCount: int) -> np.ndarray:
     """Performs Lucy-Richardson deconvolution on the provided image using a
     Gaussian point spread function.
 
@@ -100,8 +96,7 @@ def deconvolve_lucyrichardson(image: np.ndarray,
     l = 0
 
     if windowSize % 2 != 1:
-        gaussianFilter = matlab.matlab_gauss2D(shape=(windowSize, windowSize),
-                                               sigma=sigmaG)
+        gaussianFilter = matlab.matlab_gauss2D(shape=(windowSize, windowSize), sigma=sigmaG)
 
     for i in range(iterationCount):
         if i > 1:
@@ -113,19 +108,17 @@ def deconvolve_lucyrichardson(image: np.ndarray,
         cv2.addWeighted(J1, 1, Y, l, 0, Y)
         np.clip(Y, 0, None, Y)
         if windowSize % 2 == 1:
-            cv2.GaussianBlur(Y, (windowSize, windowSize), sigmaG, reblurred,
-                             borderType=cv2.BORDER_REPLICATE)
+            cv2.GaussianBlur(Y, (windowSize, windowSize), sigmaG, reblurred, borderType=cv2.BORDER_REPLICATE)
         else:
-            reblurred = ndimage.convolve(Y, gaussianFilter, mode='constant')
+            reblurred = ndimage.convolve(Y, gaussianFilter, mode="constant")
         np.clip(reblurred, eps, None, reblurred)
         cv2.divide(wI, reblurred, imR)
         imR += eps
         if windowSize % 2 == 1:
-            cv2.GaussianBlur(imR, (windowSize, windowSize), sigmaG, imR,
-                             borderType=cv2.BORDER_REPLICATE)
+            cv2.GaussianBlur(imR, (windowSize, windowSize), sigmaG, imR, borderType=cv2.BORDER_REPLICATE)
         else:
-            imR = ndimage.convolve(imR, gaussianFilter, mode='constant')
-            imR[imR > 2 ** 16] = 0
+            imR = ndimage.convolve(imR, gaussianFilter, mode="constant")
+            imR[imR > 2**16] = 0
         np.copyto(J2, J1)
         np.multiply(Y, imR, out=J1)
         np.copyto(T2, T1)
@@ -133,10 +126,9 @@ def deconvolve_lucyrichardson(image: np.ndarray,
     return J1
 
 
-def deconvolve_lucyrichardson_guo(image: np.ndarray,
-                                  windowSize: int,
-                                  sigmaG: float,
-                                  iterationCount: int) -> np.ndarray:
+def deconvolve_lucyrichardson_guo(
+    image: np.ndarray, windowSize: int, sigmaG: float, iterationCount: int
+) -> np.ndarray:
     """Performs Lucy-Richardson deconvolution on the provided image using a
     Gaussian point spread function. This version used the optimized
     deconvolution approach described in:
@@ -157,18 +149,16 @@ def deconvolve_lucyrichardson_guo(image: np.ndarray,
     [pf, pb] = calculate_projectors(windowSize, sigmaG)
 
     eps = 1.0e-6
-    i_max = 2**16-1
+    i_max = 2**16 - 1
 
     ek = np.copy(image)
     np.clip(ek, eps, None, ek)
 
     for i in range(iterationCount):
-        ekf = cv2.filter2D(ek, -1, pf,
-                           borderType=cv2.BORDER_REPLICATE)
+        ekf = cv2.filter2D(ek, -1, pf, borderType=cv2.BORDER_REPLICATE)
         np.clip(ekf, eps, i_max, ekf)
 
-        ek = ek*cv2.filter2D(image/ekf, -1, pb,
-                             borderType=cv2.BORDER_REPLICATE)
+        ek = ek * cv2.filter2D(image / ekf, -1, pb, borderType=cv2.BORDER_REPLICATE)
         np.clip(ek, eps, i_max, ek)
 
     return ek
