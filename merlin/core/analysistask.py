@@ -3,6 +3,9 @@ from abc import ABC, abstractmethod
 import threading
 import multiprocessing
 from typing import List
+import cProfile
+import pstats
+import io
 
 import merlin
 
@@ -66,6 +69,9 @@ class AnalysisTask(ABC):
         if 'codebookNum' in self.parameters:
             self.codebookNum = self.parameters['codebookNum']
 
+        if 'profile' not in self.parameters:
+            self.parameters['profile'] = False
+
     def save(self, overwrite=False) -> None:
         """Save a copy of this AnalysisTask into the data set.
 
@@ -113,7 +119,18 @@ class AnalysisTask(ABC):
 
             self.dataSet.record_analysis_started(self)
             self._indicate_running()
-            self._run_analysis()
+            if self.parameters["profile"]:
+                profiler = cProfile.Profile()
+                profiler.enable()
+                self._run_analysis()
+                profiler.disable()
+                stat_string = io.StringIO()
+                stats = pstats.Stats(profiler, stream=stat_string)
+                stats.sort_stats("cumulative")
+                stats.print_stats()
+                logger.info(stat_string.getvalue())
+            else:
+                self._run_analysis()
             self.dataSet.record_analysis_complete(self)
             logger.info('Completed ' + self.get_analysis_name())
             self.dataSet.close_logger(self)
@@ -317,7 +334,18 @@ class ParallelAnalysisTask(AnalysisTask):
 
                 self.dataSet.record_analysis_started(self, fragmentName)
                 self._indicate_running(fragmentName)
-                self._run_analysis(fragmentName)
+                if self.parameters["profile"]:
+                    profiler = cProfile.Profile()
+                    profiler.enable()
+                    self._run_analysis(fragmentName)
+                    profiler.disable()
+                    stat_string = io.StringIO()
+                    stats = pstats.Stats(profiler, stream=stat_string)
+                    stats.sort_stats("cumulative")
+                    stats.print_stats()
+                    logger.info(stat_string.getvalue())
+                else:
+                    self._run_analysis(fragmentName)
                 self.dataSet.record_analysis_complete(self, fragmentName)
                 logger.info('Completed %s %s'
                             % (self.get_analysis_name(), fragmentName))
