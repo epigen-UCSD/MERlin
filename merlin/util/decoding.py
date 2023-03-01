@@ -101,7 +101,7 @@ class PixelBasedDecoder(object):
             np.array([(p - b) / s for p, s, b in zip(pixelTraces, scaleFactors, backgrounds)])
         )
 
-        pixelMagnitudes = np.array([np.linalg.norm(x) for x in scaledPixelTraces], dtype=np.float32)
+        pixelMagnitudes = np.array(np.linalg.norm(scaledPixelTraces, axis=1), dtype=np.float32)
         pixelMagnitudes[pixelMagnitudes == 0] = 1
 
         normalizedPixelTraces = scaledPixelTraces / pixelMagnitudes[:, None]
