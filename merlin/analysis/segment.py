@@ -3,9 +3,7 @@ import numpy as np
 from skimage import measure
 from skimage import segmentation
 import rtree
-from shapely import geometry
-from typing import List, Dict
-from scipy.spatial import cKDTree
+from typing import List
 from cellpose import models as cpmodels
 import pandas as pd
 from skimage.segmentation import expand_labels
@@ -288,8 +286,7 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         if "dilate_cells" not in self.parameters:
             self.parameters["dilate_cells"] = None
 
-    def fragment_count(self):
-        return len(self.dataSet.get_fovs())
+        self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
 
     def get_estimated_memory(self):
         return 2048
@@ -298,7 +295,17 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         return 5
 
     def get_dependencies(self):
-        return []
+        return [self.parameters["global_align_task"]]
+
+    def load_mask(self, fragmentName):
+        return self.dataSet.load_numpy_analysis_result(
+            "mask", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="masks"
+        )
+
+    def load_metadata(self, fragmentName):
+        return self.dataSet.load_dataframe_from_csv(
+            "metadata", self.get_analysis_name(), fragmentName, subdirectory="metadata"
+        )
 
     def _run_analysis(self, fragmentIndex):
         # Only 2D segmentation for now. Use middle z-slice.
@@ -321,6 +328,11 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             mask = expand_labels(mask, self.parameters["dilate_cells"])
         metadata = pd.DataFrame(regionprops_table(mask, properties=["label", "area", "centroid"]))
         metadata.columns = ["cell_id", "volume", "x", "y"]
+        global_x, global_y = self.alignTask.fov_coordinates_to_global(
+            fragmentIndex, metadata[["x", "y"]].T.to_numpy()
+        )
+        metadata["global_x"] = global_x
+        metadata["global_y"] = global_y
         self.dataSet.save_numpy_analysis_result(
             mask, "mask", self.get_analysis_name(), resultIndex=fragmentIndex, subdirectory="masks"
         )
@@ -334,20 +346,36 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         )
 
 
-class LinkCellsInOverlaps(analysistask.AnalysisTask):
+class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
+        self.globalTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
+
+    def fragment_list(self):
+        return self.dataSet.get_overlap_names()
+
     def get_estimated_memory(self):
-        # TODO - refine estimate
         return 2048
 
     def get_estimated_time(self):
-        # TODO - refine estimate
         return 5
 
     def get_dependencies(self):
         return [self.parameters["segment_task"], self.parameters["global_align_task"]]
+
+    def get_links(self, overlapName):
+        return self.dataSet.load_pickle_analysis_result(
+            "paired_cells", self.get_analysis_name(), resultIndex=overlapName, subdirectory="paired_cells"
+        )
+
+    def get_overlap_volumes(self, overlapName):
+        return self.dataSet.load_dataframe_from_csv(
+            "overlap_volume",
+            self.get_analysis_name(),
+            resultIndex=overlapName,
+            subdirectory="volumes",
+        )
 
     def match_cells_in_overlap(self, strip_a: np.ndarray, strip_b: np.ndarray):
         """Find cells in overlapping regions of two FOVs that are the same cells.
@@ -385,21 +413,63 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         # Only keep the pairs found in both directions
         return s1 & s2
 
-    def _run_analysis(self):
+    def _run_analysis(self, overlapName):
         """Identify the cells overlapping FOVs that are the same cell."""
-        globalTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
+        segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
+        a, b = self.dataSet.get_overlap(overlapName)
         pairs = set()
-        for a, b in globalTask.find_fov_overlaps():
-            # Get portions of masks that overlap
-            if len(self[a.fov].shape) == 2:
-                strip_a = self[a.fov][a.xslice, a.yslice]
-                strip_b = self[b.fov][b.xslice, b.yslice]
-            elif len(self[a.fov].shape) == 3:
-                strip_a = self[a.fov][:, a.xslice, a.yslice]
-                strip_b = self[b.fov][:, b.xslice, b.yslice]
-            newpairs = self.match_cells_in_overlap(strip_a, strip_b)
-            pairs.update({(a.fov * 10000 + x[0], b.fov * 10000 + x[1]) for x in newpairs})
-        linked_sets = [set([a, b]) for a, b in pairs]
+        mask_a = segmentTask.load_mask(a.fov)
+        mask_b = segmentTask.load_mask(b.fov)
+        # Get portions of masks that overlap
+        if len(mask_a.shape) == 2:
+            strip_a = mask_a[a.xslice, a.yslice]
+            strip_b = mask_b[b.xslice, b.yslice]
+        elif len(mask_a.shape) == 3:
+            strip_a = mask_a[:, a.xslice, a.yslice]
+            strip_b = mask_b[:, b.xslice, b.yslice]
+        newpairs = self.match_cells_in_overlap(strip_a, strip_b)
+        pairs = {(a.fov + "_" + str(x[0]), b.fov + "_" + str(x[1])) for x in newpairs}
+        self.dataSet.save_pickle_analysis_result(
+            pairs, "paired_cells", self.get_analysis_name(), resultIndex=overlapName, subdirectory="paired_cells"
+        )
+        dfa = pd.DataFrame(regionprops_table(strip_a, properties=["label", "area"]))
+        dfa["label"] = a.fov + "_" + dfa["label"].astype(str)
+        dfb = pd.DataFrame(regionprops_table(strip_b, properties=["label", "area"]))
+        dfb["label"] = b.fov + "_" + dfb["label"].astype(str)
+        self.dataSet.save_dataframe_to_csv(
+            pd.concat([dfa, dfb]).set_index("label"),
+            "overlap_volume",
+            self.get_analysis_name(),
+            resultIndex=overlapName,
+            subdirectory="volumes",
+        )
+
+
+class CombineCellposeMetadata(analysistask.AnalysisTask):
+    def __init__(self, dataSet, parameters=None, analysisName=None):
+        super().__init__(dataSet, parameters, analysisName)
+
+    def get_estimated_memory(self):
+        return 2048
+
+    def get_estimated_time(self):
+        return 5
+
+    def get_dependencies(self):
+        return [self.parameters["segment_task"], self.parameters["link_cell_task"]]
+
+    def _combine_overlap_volumes(self):
+        linkCellTask = self.dataSet.load_analysis_task(self.parameters["link_cell_task"])
+        volumes = pd.concat(
+            [linkCellTask.get_overlap_volumes(overlapName) for overlapName in self.dataSet.get_overlap_names()]
+        )
+        return volumes.groupby("label").max()
+
+    def _combine_cell_metadata(self):
+        linkCellTask = self.dataSet.load_analysis_task(self.parameters["link_cell_task"])
+        linked_sets = []
+        for overlapName in self.dataSet.get_overlap_names():
+            linked_sets.extend([set(link) for link in linkCellTask.get_links(overlapName)])
         # Combine sets until they are all disjoint
         # e.g., if there is a (1, 2) and (2, 3) set, combine to (1, 2, 3)
         # This is needed for corners where 4 FOVs overlap
@@ -416,33 +486,32 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
                 else:
                     new.append(a)
             linked_sets = new
-        self.dataSet.save_pickle_analysis_result(linked_sets, "cell_links", self.get_analysis_name())
-
-
-class CombineCellposeMetadata(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
-
-        self.segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-
-    def get_estimated_memory(self):
-        # TODO - refine estimate
-        return 2048
-
-    def get_estimated_time(self):
-        # TODO - refine estimate
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"]]
+        cell_links = {}
+        for link_set in linked_sets:
+            name = list(link_set)[0]
+            for cell in link_set:
+                cell_links[cell] = name
+        self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.get_analysis_name())
+        return cell_links
 
     def _run_analysis(self):
         dfs = []
+        segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
+        cell_mapping = self._combine_cell_metadata()
         for fov in self.dataSet.get_fovs():
-            df = self.dataSet.load_dataframe_from_csv("metadata", self.parameters["segment_task"], fov, "metadata")
-            df["cell_id"] += fov * 10000
+            df = segmentTask.load_metadata(fov)
+            df["cell_id"] = fov + "_" + df["cell_id"].astype(str)
+            df = df.rename(columns={"volume": "fov_volume"})
             dfs.append(df)
-        metadata = pd.concat(dfs)
-        metadata = metadata.set_index("cell_id")
-
+        metadata = pd.concat(dfs).set_index("cell_id")
+        metadata["overlap_volume"] = self._combine_overlap_volumes()
+        metadata["overlap_volume"] = metadata["overlap_volume"].fillna(0)
+        metadata["nonoverlap_volume"] = metadata["fov_volume"] - metadata["overlap_volume"]
+        metadata.index = [cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in metadata.index]
+        metadata.index.name = "cell_id"
+        metadata = metadata.groupby("cell_id").agg(
+            {"global_x": "mean", "global_y": "mean", "overlap_volume": "mean", "nonoverlap_volume": "sum"}
+        )
+        metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
+        metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
         self.dataSet.save_dataframe_to_csv(metadata, "cell_metadata", self.get_analysis_name())

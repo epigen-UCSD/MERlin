@@ -19,6 +19,10 @@ from typing import Optional
 import h5py
 import tables
 import xmltodict
+import math
+import functools
+from sklearn.neighbors import NearestNeighbors
+from collections import namedtuple
 
 from merlin.util import imagereader
 import merlin
@@ -315,7 +319,7 @@ class DataSet(object):
         analysisTask: TaskOrName = None,
         resultIndex: int = None,
         subdirectory: str = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Save a pandas data frame to a csv file stored in this dataset.
 
@@ -346,7 +350,7 @@ class DataSet(object):
         analysisTask: TaskOrName = None,
         resultIndex: int = None,
         subdirectory: str = None,
-        **kwargs
+        **kwargs,
     ) -> Union[pandas.DataFrame, None]:
         """Load a pandas data frame from a csv file stored in this data set.
 
@@ -860,6 +864,7 @@ class ImageDataSet(DataSet):
             self._import_microscope_parameters(microscopeParametersName)
 
         self._load_microscope_parameters()
+        self.fovDimensions = [dim * self.micronsPerPixel for dim in self.imageDimensions]
 
     def get_image_file_names(self):
         return sorted(self.rawDataPortal.list_files(extensionList=[".dax", ".tif", ".tiff", ".zarr", ".zar"]))
@@ -931,6 +936,9 @@ class ImageDataSet(DataSet):
         return xmltodict.parse(filePortal.read_as_text())
 
 
+Overlap = namedtuple("Overlap", ["fov", "xslice", "yslice"])
+
+
 class MERFISHDataSet(ImageDataSet):
     def __init__(
         self,
@@ -982,6 +990,7 @@ class MERFISHDataSet(ImageDataSet):
         if positionFileName is not None:
             self._import_positions(positionFileName)
         self._load_positions()
+        self._find_fov_overlaps()
 
     def save_codebook(self, codebook: codebook.Codebook) -> None:
         """Store the specified codebook in this dataset.
@@ -1166,3 +1175,53 @@ class MERFISHDataSet(ImageDataSet):
 
     def _convert_parameter_list(self, listIn, castFunction, delimiter=";"):
         return [castFunction(x) for x in listIn.split(delimiter) if len(x) > 0]
+
+    def _get_overlap_slice(self, diff: float, axis: int, get_trim: bool = False) -> slice:
+        """Get a slice for the region of an image overlapped by another FOV.
+        :param diff: The amount of overlap in the global coordinate system.
+        :param axis: The axis for the slice.
+        :param get_trim: If True, return the half of the overlap closest to the edge. This is for
+            determining in which region the barcodes should be trimmed to avoid duplicates.
+        :return: A slice in the FOV coordinate system for the overlap.
+        """
+        fovsize = self.fovDimensions[axis]
+        imagesize = self.imageDimensions[axis]
+        if int(diff) == 0:
+            return slice(None)
+        if diff > 0:
+            if get_trim:
+                diff = fovsize - ((fovsize - diff) / 2)
+            overlap = imagesize * diff / fovsize
+            return slice(math.trunc(overlap), None)
+        else:
+            if get_trim:
+                diff = -fovsize - ((-fovsize - diff) / 2)
+            overlap = imagesize * diff / fovsize
+            return slice(None, math.trunc(overlap))
+
+    def _find_fov_overlaps(self):
+        positions = self.get_stage_positions()
+        neighbor_graph = NearestNeighbors()
+        neighbor_graph = neighbor_graph.fit(positions)
+        radius = max(self.fovDimensions)
+        res = neighbor_graph.radius_neighbors(positions, radius=radius, return_distance=True, sort_results=True)
+        self.overlaps = {}
+        for i, (dists, fovs) in enumerate(zip(*res)):
+            i = positions.iloc[i].name
+            for dist, fov in zip(dists, fovs):
+                fov = positions.iloc[fov].name
+                if dist == 0 or f"{i}__{fov}" in self.overlaps or f"{fov}__{i}" in self.overlaps:
+                    continue
+                diff = positions.loc[i] - positions.loc[fov]
+                _get_x_slice = functools.partial(self._get_overlap_slice, axis=0, get_trim=False)
+                _get_y_slice = functools.partial(self._get_overlap_slice, axis=1, get_trim=False)
+                self.overlaps[f"{i}__{fov}"] = (
+                    Overlap(i, _get_x_slice(diff["X"]), _get_y_slice(-diff["Y"])),
+                    Overlap(fov, _get_x_slice(-diff["X"]), _get_y_slice(diff["Y"])),
+                )
+
+    def get_overlap(self, overlapName):
+        return self.overlaps[overlapName]
+
+    def get_overlap_names(self):
+        return list(self.overlaps.keys())
