@@ -1206,6 +1206,7 @@ class MERFISHDataSet(ImageDataSet):
         radius = max(self.fovDimensions)
         res = neighbor_graph.radius_neighbors(positions, radius=radius, return_distance=True, sort_results=True)
         self.overlaps = {}
+        self.trim_overlaps = {}
         for i, (dists, fovs) in enumerate(zip(*res)):
             i = positions.iloc[i].name
             for dist, fov in zip(dists, fovs):
@@ -1213,11 +1214,15 @@ class MERFISHDataSet(ImageDataSet):
                 if dist == 0 or f"{i}__{fov}" in self.overlaps or f"{fov}__{i}" in self.overlaps:
                     continue
                 diff = positions.loc[i] - positions.loc[fov]
-                _get_x_slice = functools.partial(self._get_overlap_slice, axis=0, get_trim=False)
-                _get_y_slice = functools.partial(self._get_overlap_slice, axis=1, get_trim=False)
+                _get_x_slice = functools.partial(self._get_overlap_slice, axis=0)
+                _get_y_slice = functools.partial(self._get_overlap_slice, axis=1)
                 self.overlaps[f"{i}__{fov}"] = (
-                    Overlap(i, _get_x_slice(diff["X"]), _get_y_slice(-diff["Y"])),
-                    Overlap(fov, _get_x_slice(-diff["X"]), _get_y_slice(diff["Y"])),
+                    Overlap(i, _get_x_slice(diff["X"], get_trim=False), _get_y_slice(-diff["Y"], get_trim=False)),
+                    Overlap(fov, _get_x_slice(-diff["X"], get_trim=False), _get_y_slice(diff["Y"], get_trim=False)),
+                )
+                self.trim_overlaps[f"{i}__{fov}"] = (
+                    Overlap(i, _get_x_slice(diff["X"], get_trim=True), _get_y_slice(-diff["Y"], get_trim=True)),
+                    Overlap(fov, _get_x_slice(-diff["X"], get_trim=True), _get_y_slice(diff["Y"], get_trim=True)),
                 )
 
     def get_overlap(self, overlapName):
@@ -1225,3 +1230,20 @@ class MERFISHDataSet(ImageDataSet):
 
     def get_overlap_names(self):
         return list(self.overlaps.keys())
+
+    def get_overlap_mask(self, fov, trim=False):
+        mask = np.zeros(self.imageDimensions)
+        if trim:
+            overlapList = self.trim_overlaps
+        else:
+            overlapList = self.overlaps
+        for overlapName, overlap in overlapList.items():
+            fovs = overlapName.split("__")
+            if fovs[0] == fov:
+                overlap = overlap[0]
+            elif fovs[1] == fov:
+                overlap = overlap[1]
+            else:
+                continue
+            mask[overlap.xslice, overlap.yslice] = 1
+        return mask

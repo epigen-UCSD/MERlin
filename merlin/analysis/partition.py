@@ -1,8 +1,8 @@
 import pandas
 import numpy as np
+import pandas as pd
 
 from merlin.core import analysistask
-from merlin.util import spatialfeature
 
 
 class PartitionBarcodes(analysistask.ParallelAnalysisTask):
@@ -106,3 +106,64 @@ class ExportPartitionedBarcodes(analysistask.AnalysisTask):
         parsedBarcodes = pTask.get_partitioned_barcodes()
 
         self.dataSet.save_dataframe_to_csv(parsedBarcodes, "barcodes_per_feature", self.get_analysis_name())
+
+
+class PartitionBarcodesFromMask(analysistask.ParallelAnalysisTask):
+
+    """
+    An analysis task that assigns RNAs and sequential signals to cells
+    based on segmentation masks produced during the segment task.
+    """
+
+    def __init__(self, dataSet, parameters=None, analysisName=None):
+        super().__init__(dataSet, parameters, analysisName)
+
+    def get_estimated_memory(self):
+        return 2048
+
+    def get_estimated_time(self):
+        return 1
+
+    def get_dependencies(self):
+        return [self.parameters["segment_task"], self.parameters["filter_task"]]
+
+    def get_partitioned_barcodes(self, fov: str = None) -> pandas.DataFrame:
+        """Retrieve the cell by barcode matrixes calculated from this
+        analysis task.
+
+        Args:
+            fov: the fov to get the barcode table for. If not specified, the
+                combined table for all fovs are returned.
+
+        Returns:
+            A pandas data frame containing the parsed barcode information.
+        """
+        if fov is None:
+            return pandas.concat([self.get_partitioned_barcodes(fov) for fov in self.dataSet.get_fovs()])
+
+        return self.dataSet.load_dataframe_from_csv(
+            "counts_per_cell", self.get_analysis_name(), fov, subdirectory="counts_per_cell", index_col=0
+        )
+
+    def apply_mask(self, barcodes, mask):
+        return mask[barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)]
+
+    def _run_analysis(self, fragmentIndex):
+        filterTask = self.dataSet.load_analysis_task(self.parameters["filter_task"])
+        segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
+        codebook = filterTask.get_codebook()
+        barcodes = filterTask.get_barcode_database().get_barcodes(fragmentIndex)
+
+        # Trim barcodes in overlapping regions
+        overlap_mask = self.dataSet.get_overlap_mask(fragmentIndex, trim=True)
+        barcodes = barcodes[~self.apply_mask(barcodes, overlap_mask.astype(bool))]
+
+        cell_mask = segmentTask.load_mask(fragmentIndex)
+        matrix = pd.crosstab(self.apply_mask(barcodes, cell_mask), barcodes["barcode_id"]).drop(0)
+        matrix = matrix.rename(columns=codebook.get_data()["name"])
+        matrix.index = fragmentIndex + "_" + matrix.index.astype(str)
+        matrix.index.name = None
+
+        self.dataSet.save_dataframe_to_csv(
+            matrix, "counts_per_cell", self.get_analysis_name(), fragmentIndex, subdirectory="counts_per_cell"
+        )
