@@ -127,7 +127,7 @@ class PartitionBarcodesFromMask(analysistask.ParallelAnalysisTask):
     def get_dependencies(self):
         return [self.parameters["segment_task"], self.parameters["filter_task"]]
 
-    def get_partitioned_barcodes(self, fov: str = None) -> pandas.DataFrame:
+    def get_cell_by_gene_matrix(self, fov: str = None) -> pandas.DataFrame:
         """Retrieve the cell by barcode matrixes calculated from this
         analysis task.
 
@@ -139,10 +139,18 @@ class PartitionBarcodesFromMask(analysistask.ParallelAnalysisTask):
             A pandas data frame containing the parsed barcode information.
         """
         if fov is None:
-            return pandas.concat([self.get_partitioned_barcodes(fov) for fov in self.dataSet.get_fovs()])
+            return pandas.concat([self.get_cell_by_gene_matrix(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv(
             "counts_per_cell", self.get_analysis_name(), fov, subdirectory="counts_per_cell", index_col=0
+        )
+
+    def get_barcode_table(self, fov=None):
+        if fov is None:
+            return pandas.concat([self.get_barcode_table(fov) for fov in self.dataSet.get_fovs()])
+
+        return self.dataSet.load_dataframe_from_csv(
+            "barcodes", self.get_analysis_name(), fov, subdirectory="barcodes", index_col=0
         )
 
     def apply_mask(self, barcodes, mask):
@@ -159,11 +167,20 @@ class PartitionBarcodesFromMask(analysistask.ParallelAnalysisTask):
         barcodes = barcodes[~self.apply_mask(barcodes, overlap_mask.astype(bool))]
 
         cell_mask = segmentTask.load_mask(fragmentIndex)
-        matrix = pd.crosstab(self.apply_mask(barcodes, cell_mask), barcodes["barcode_id"]).drop(0)
-        matrix = matrix.rename(columns=codebook.get_data()["name"])
-        matrix.index = fragmentIndex + "_" + matrix.index.astype(str)
-        matrix.index.name = None
+        barcodes["cell_id"] = self.apply_mask(barcodes, cell_mask).astype(str)
+        barcodes["cell_id"] = fragmentIndex + "__" + barcodes["cell_id"]
 
+        # Save barcode table
+        barcodes["gene"] = [codebook.get_name_for_barcode_index(i) for i in barcodes["barcode_id"]]
+        barcodes = barcodes[["gene", "cell_id", "fov", "x", "y", "z", "global_x", "global_y", "global_z"]]
+        self.dataSet.save_dataframe_to_csv(
+            barcodes, "barcodes", self.get_analysis_name(), fragmentIndex, subdirectory="barcodes", index=False
+        )
+
+        # Make cell by gene matrix
+        matrix = pd.crosstab(barcodes["cell_id"], barcodes["gene"]).drop(fragmentIndex + "__0")
+        matrix.columns.name = None
+        matrix.index.name = None
         self.dataSet.save_dataframe_to_csv(
             matrix, "counts_per_cell", self.get_analysis_name(), fragmentIndex, subdirectory="counts_per_cell"
         )

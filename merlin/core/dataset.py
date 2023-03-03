@@ -3,6 +3,7 @@ import json
 import shutil
 import pandas
 import numpy as np
+import scanpy as sc
 import tifffile
 import importlib
 import time
@@ -495,6 +496,18 @@ class DataSet(object):
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".pkl")
         with open(savePath, "wb") as f:
             pickle.dump(analysisResult, f)
+
+    def load_scanpy_analysis_result(
+        self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ) -> Dict:
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".h5ad")
+        return sc.read(savePath)
+
+    def save_scanpy_analysis_result(
+        self, analysisResult, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
+    ):
+        savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".h5ad")
+        analysisResult.write(savePath)
 
     def save_numpy_analysis_result(
         self,
