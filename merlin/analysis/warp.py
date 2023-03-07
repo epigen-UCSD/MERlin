@@ -432,19 +432,25 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
         Returns:
             a 2-dimensional numpy array containing the specified image
         """
-        zdrift, xdrift, ydrift = self.get_transformation(fov, dataChannel)
         try:
-            inputImage = self.dataSet.get_raw_image(
-                dataChannel, fov, self.dataSet.z_index_to_position(zIndex - zdrift)
+            zdrift, xdrift, ydrift = self.get_transformation(fov, dataChannel)
+        except ValueError:  # Drift correction was not 3D
+            zdrift = 0
+            xdrift, ydrift = self.get_transformation(fov, dataChannel)
+        try:
+            input_image = self.dataSet.get_raw_image(
+                dataChannel,
+                fov,
+                self.dataSet.z_index_to_position(zIndex - zdrift),
             )
             if chromaticCorrector is not None:
-                imageColor = self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
-                inputImage = chromaticCorrector.transform_image(inputImage, imageColor).astype(inputImage.dtype)
-
-            return ndimage.shift(inputImage, [-xdrift, -ydrift], order=0)
-        except IndexError:
-            inputImage = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(0))
-            return np.zeros_like(inputImage)
+                image_color = self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
+                input_image = chromaticCorrector.transform_image(input_image, image_color).astype(input_image.dtype)
+        except IndexError:  # Z drift outside bounds
+            input_image = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(input_image)
+        else:
+            return ndimage.shift(input_image, [-xdrift, -ydrift], order=0)
 
     def get_transformation(self, fragmentName: str, dataChannel: int = None):
         """Get the transformations for aligning images for the specified field
@@ -453,82 +459,75 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
         drifts = self.dataSet.load_numpy_analysis_result(
             "drifts", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="drifts"
         )
-        if dataChannel is not None:
-            return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel) - 1]
-        else:
+        if dataChannel is None:
             return drifts
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel) - 1]
 
-    def get_tiles(self, im_3d, size=256, delete_edges=False):
-        sz, sx, sy = im_3d.shape
-        if not delete_edges:
-            Mz = int(np.ceil(sz / float(size)))
-            Mx = int(np.ceil(sx / float(size)))
-            My = int(np.ceil(sy / float(size)))
-        else:
-            Mz = np.max([1, int(sz / float(size))])
-            Mx = np.max([1, int(sx / float(size))])
-            My = np.max([1, int(sy / float(size))])
-        ims_dic = {}
-        for iz in range(Mz):
-            for ix in range(Mx):
-                for iy in range(My):
-                    ims_dic[(iz, ix, iy)] = ims_dic.get((iz, ix, iy), []) + [
-                        im_3d[iz * size : (iz + 1) * size, ix * size : (ix + 1) * size, iy * size : (iy + 1) * size]
-                    ]
-        return ims_dic
+    def get_tiles(self, img, size=256):
+        tiles = np.ceil(np.array(img.shape) / size)
+        res = [img]
+        for axis, n in enumerate(tiles):
+            res = sum((np.array_split(im, n, axis) for im in res), [])
+        return res
 
     def norm_slice(self, im, s):
         im_ = im.astype(np.float32)
-        return np.array([im__ - cv2.blur(im__, (s, s)) for im__ in im_], dtype=np.float32)
+        if im_.ndim == 3:
+            return np.array([im__ - cv2.blur(im__, (s, s)) for im__ in im_], dtype=np.float32)
+        return im_ - cv2.blur(im_, (s, s))
 
     def get_txyz(self, im_dapi0, im_dapi1):
         im_dapi0 = np.array(im_dapi0, dtype=np.float32)
         im_dapi1 = np.array(im_dapi1, dtype=np.float32)
         im_dapi0_ = self.norm_slice(im_dapi0, self.parameters["sz_norm"])
         im_dapi1_ = self.norm_slice(im_dapi1, self.parameters["sz_norm"])
-        dic_ims0 = self.get_tiles(im_dapi0_, size=self.parameters["sz"], delete_edges=True)
-        dic_ims1 = self.get_tiles(im_dapi1_, size=self.parameters["sz"], delete_edges=True)
-        keys = list(dic_ims0.keys())
-        best = np.argsort([np.std(dic_ims0[key]) for key in keys])[::-1]
+        tiles0 = self.get_tiles(im_dapi0_, size=self.parameters["sz"])
+        tiles1 = self.get_tiles(im_dapi1_, size=self.parameters["sz"])
+        best = np.argsort([np.std(tile) for tile in tiles0])[::-1]
         txyzs = []
         im_cors = []
         for ib in range(min(self.parameters["nelems"], len(best))):
-            im0 = dic_ims0[keys[best[ib]]][0].copy()
-            im1 = dic_ims1[keys[best[ib]]][0].copy()
+            im0 = tiles0[ib].copy()
+            im1 = tiles1[ib].copy()
             im0 -= np.mean(im0)
             im1 -= np.mean(im1)
             im0 /= np.std(im0)
             im1 /= np.std(im1)
-
-            im_cor = fftconvolve(im0[::-1, ::-1, ::-1], im1, mode="full")
+            if im0.ndim == 3:
+                im_cor = fftconvolve(im0[::-1, ::-1, ::-1], im1, mode="full")
+            else:
+                im_cor = fftconvolve(im0[::-1, ::-1], im1, mode="full")
             txyz = np.unravel_index(np.argmax(im_cor), im_cor.shape) - np.array(im0.shape) + 1
-
             im_cors.append(im_cor)
             txyzs.append(txyz)
         txyz = np.median(txyzs, 0).astype(int)
         return txyz, txyzs
 
-    def _run_analysis(self, fragmentName: str):
+    def _run_analysis(self, fov: str) -> None:
         """
         Given two 3D images im_dapi0,im_dapi1, this normalizes them by subtracting local background
         and then computes correlations on <nelemes> blocks with highest  std of signal of size sz
         It will return median value and a list of single values.
         """
-        fixedImage = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragmentName)
+        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fov)
         drifts = []
         tile_drifts = []
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
-            movingImage = self.dataSet.get_fiducial_image(channel, fragmentName)
-            txyz, txyzs = self.get_txyz(fixedImage, movingImage)
+            moving_image = self.dataSet.get_fiducial_image(channel, fov)
+            txyz, txyzs = self.get_txyz(fixed_image, moving_image)
             drifts.append(txyz)
             tile_drifts.append(txyzs)
         self.dataSet.save_numpy_analysis_result(
-            np.array(drifts), "drifts", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="drifts"
+            np.array(drifts),
+            "drifts",
+            self.get_analysis_name(),
+            resultIndex=fov,
+            subdirectory="drifts",
         )
         self.dataSet.save_numpy_analysis_result(
             np.array(tile_drifts),
             "tile_drifts",
             self.get_analysis_name(),
-            resultIndex=fragmentName,
+            resultIndex=fov,
             subdirectory="drifts",
         )
