@@ -5,6 +5,7 @@ from skimage import segmentation
 import rtree
 from typing import List
 from cellpose import models as cpmodels
+from cellpose import utils
 import pandas as pd
 from skimage.segmentation import expand_labels
 from skimage.measure import regionprops_table
@@ -275,6 +276,8 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
 
         if "channel" not in self.parameters:
             self.parameters["channel"] = "DAPI"
+        if "z_pos" not in self.parameters:
+            self.parameters["z_pos"] = None
         if "diameter" not in self.parameters:
             self.parameters["diameter"] = None
         if "cellprob_threshold" not in self.parameters:
@@ -285,6 +288,10 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             self.parameters["minimum_size"] = None
         if "dilate_cells" not in self.parameters:
             self.parameters["dilate_cells"] = None
+        if "downscale_xy" not in self.parameters:
+            self.parameters["downscale_xy"] = 1
+        if "downscale_z" not in self.parameters:
+            self.parameters["downscale_z"] = 1
 
         self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
 
@@ -298,9 +305,26 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         return [self.parameters["global_align_task"]]
 
     def load_mask(self, fragmentName):
-        return self.dataSet.load_numpy_analysis_result(
+        mask = self.dataSet.load_numpy_analysis_result(
             "mask", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="masks"
         )
+        if mask.ndim == 3:
+            shape = (
+                mask.shape[0] * self.parameters["downscale_z"],
+                mask.shape[1] * self.parameters["downscale_xy"],
+                mask.shape[2] * self.parameters["downscale_xy"],
+            )
+            z_int = np.round(np.linspace(0, mask.shape[0] - 1, shape[0])).astype(int)
+            x_int = np.round(np.linspace(0, mask.shape[1] - 1, shape[1])).astype(int)
+            y_int = np.round(np.linspace(0, mask.shape[2] - 1, shape[2])).astype(int)
+            return mask[z_int][:, x_int][:, :, y_int]
+        shape = (
+            mask.shape[0] * self.parameters["downscale_xy"],
+            mask.shape[1] * self.parameters["downscale_xy"],
+        )
+        x_int = np.round(np.linspace(0, mask.shape[0] - 1, shape[0])).astype(int)
+        y_int = np.round(np.linspace(0, mask.shape[1] - 1, shape[1])).astype(int)
+        return mask[x_int][:, y_int]
 
     def load_metadata(self, fragmentName):
         return self.dataSet.load_dataframe_from_csv(
@@ -308,26 +332,53 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         )
 
     def _run_analysis(self, fragmentIndex):
-        # Only 2D segmentation for now. Use middle z-slice.
-        zPositions = self.dataSet.get_z_positions()
-        zIndex = int(len(zPositions) // 2)
         channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
-        inputImage = self.dataSet.get_raw_image(channelIndex, fragmentIndex, zIndex)
+        downscale = self.parameters["downscale_xy"]
+        if self.parameters["z_pos"] is not None:
+            zIndex = self.dataSet.position_to_z_index(self.parameters["z_pos"])
+            inputImage = self.dataSet.get_raw_image(channelIndex, fragmentIndex, zIndex)[::downscale, ::downscale]
+        else:
+            zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
+            inputImage = np.array(
+                [
+                    self.dataSet.get_raw_image(channelIndex, fragmentIndex, self.dataSet.position_to_z_index(zIndex))[
+                        ::downscale, ::downscale
+                    ]
+                    for zIndex in zPositions
+                ]
+            )
         model = cpmodels.Cellpose(gpu=False, model_type="cyto2")
-        mask, _, _, _ = model.eval(
-            inputImage,
-            channels=[0, 0],
-            diameter=self.parameters["diameter"],
-            cellprob_threshold=self.parameters["cellprob_threshold"],
-            flow_threshold=self.parameters["flow_threshold"],
-        )
+        if inputImage.ndim == 2:
+            mask, _, _, _ = model.eval(
+                inputImage,
+                channels=[0, 0],
+                diameter=self.parameters["diameter"],
+                cellprob_threshold=self.parameters["cellprob_threshold"],
+                flow_threshold=self.parameters["flow_threshold"],
+            )
+        else:
+            frames, _, _, _ = model.eval(list(inputImage))
+            mask = np.array(utils.stitch3D(frames))
         if self.parameters["minimum_size"]:
             sizes = pd.DataFrame(regionprops_table(mask, properties=["label", "area"]))
             mask[np.isin(mask, sizes[sizes["area"] < self.parameters["minimum_size"]]["label"])] = 0
         if self.parameters["dilate_cells"]:
-            mask = expand_labels(mask, self.parameters["dilate_cells"])
+            if mask.ndim == 2:
+                mask = expand_labels(mask, self.parameters["dilate_cells"])
+            else:
+                mask = np.array([expand_labels(frame, self.parameters["dilate_cells"]) for frame in mask])
         metadata = pd.DataFrame(regionprops_table(mask, properties=["label", "area", "centroid"]))
-        metadata.columns = ["cell_id", "volume", "x", "y"]
+        columns = ["cell_id", "volume", "x", "y"]
+        if mask.ndim == 3:
+            columns.append("z")
+        metadata.columns = columns
+        metadata["x"] *= downscale
+        metadata["y"] *= downscale
+        if mask.ndim == 3:
+            metadata["z"] *= self.parameters["downscale_z"]
+            metadata["volume"] *= downscale * downscale * self.parameters["downscale_z"]
+        else:
+            metadata["volume"] *= downscale * downscale
         global_x, global_y = self.alignTask.fov_coordinates_to_global(fragmentIndex, metadata[["x", "y"]].T.to_numpy())
         metadata["global_x"] = global_x
         metadata["global_y"] = global_y

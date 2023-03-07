@@ -154,7 +154,11 @@ class PartitionBarcodesFromMask(analysistask.ParallelAnalysisTask):
         )
 
     def apply_mask(self, barcodes, mask):
-        return mask[barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)]
+        if mask.ndim == 2:
+            return mask[barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)]
+        return mask[
+            barcodes["z"].round().astype(int), barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)
+        ]
 
     def _run_analysis(self, fragmentIndex):
         filterTask = self.dataSet.load_analysis_task(self.parameters["filter_task"])
