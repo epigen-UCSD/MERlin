@@ -418,6 +418,37 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
             "paired_cells", self.get_analysis_name(), resultIndex=overlapName, subdirectory="paired_cells"
         )
 
+    def get_cell_mapping(self):
+        try:
+            return self.dataSet.load_pickle_analysis_result("cell_links", self.get_analysis_name())
+        except FileNotFoundError:
+            linked_sets = []
+            for overlapName in self.dataSet.get_overlap_names():
+                linked_sets.extend([set(link) for link in self.get_links(overlapName)])
+            # Combine sets until they are all disjoint
+            # e.g., if there is a (1, 2) and (2, 3) set, combine to (1, 2, 3)
+            # This is needed for corners where 4 FOVs overlap
+            changed = True
+            while changed:
+                changed = False
+                new = []
+                for a in linked_sets:
+                    for b in new:
+                        if not b.isdisjoint(a):
+                            b.update(a)
+                            changed = True
+                            break
+                    else:
+                        new.append(a)
+                linked_sets = new
+            cell_links = {}
+            for link_set in linked_sets:
+                name = list(link_set)[0]
+                for cell in link_set:
+                    cell_links[cell] = name
+            self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.get_analysis_name())
+            return cell_links
+
     def get_overlap_volumes(self, overlapName):
         return self.dataSet.load_dataframe_from_csv(
             "overlap_volume",
@@ -492,81 +523,3 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
             resultIndex=overlapName,
             subdirectory="volumes",
         )
-
-
-class CombineCellposeMetadata(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"], self.parameters["link_cell_task"]]
-
-    def get_cell_mapping(self):
-        return self.dataSet.load_pickle_analysis_result("cell_links", self.get_analysis_name())
-
-    def get_cell_metadata(self):
-        return self.dataSet.load_dataframe_from_csv("cell_metadata", self.get_analysis_name(), index_col=0)
-
-    def _combine_overlap_volumes(self):
-        linkCellTask = self.dataSet.load_analysis_task(self.parameters["link_cell_task"])
-        volumes = pd.concat(
-            [linkCellTask.get_overlap_volumes(overlapName) for overlapName in self.dataSet.get_overlap_names()]
-        )
-        return volumes.groupby("label").max()
-
-    def _combine_cell_metadata(self):
-        linkCellTask = self.dataSet.load_analysis_task(self.parameters["link_cell_task"])
-        linked_sets = []
-        for overlapName in self.dataSet.get_overlap_names():
-            linked_sets.extend([set(link) for link in linkCellTask.get_links(overlapName)])
-        # Combine sets until they are all disjoint
-        # e.g., if there is a (1, 2) and (2, 3) set, combine to (1, 2, 3)
-        # This is needed for corners where 4 FOVs overlap
-        changed = True
-        while changed:
-            changed = False
-            new: List[set] = []
-            for a in linked_sets:
-                for b in new:
-                    if not b.isdisjoint(a):
-                        b.update(a)
-                        changed = True
-                        break
-                else:
-                    new.append(a)
-            linked_sets = new
-        cell_links = {}
-        for link_set in linked_sets:
-            name = list(link_set)[0]
-            for cell in link_set:
-                cell_links[cell] = name
-        self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.get_analysis_name())
-        return cell_links
-
-    def _run_analysis(self):
-        dfs = []
-        segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-        cell_mapping = self._combine_cell_metadata()
-        for fov in self.dataSet.get_fovs():
-            df = segmentTask.load_metadata(fov)
-            df["cell_id"] = fov + "__" + df["cell_id"].astype(str)
-            df = df.rename(columns={"volume": "fov_volume"})
-            dfs.append(df)
-        metadata = pd.concat(dfs).set_index("cell_id")
-        metadata["overlap_volume"] = self._combine_overlap_volumes()
-        metadata["overlap_volume"] = metadata["overlap_volume"].fillna(0)
-        metadata["nonoverlap_volume"] = metadata["fov_volume"] - metadata["overlap_volume"]
-        metadata.index = [cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in metadata.index]
-        metadata.index.name = "cell_id"
-        metadata = metadata.groupby("cell_id").agg(
-            {"global_x": "mean", "global_y": "mean", "overlap_volume": "mean", "nonoverlap_volume": "sum"}
-        )
-        metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
-        metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
-        self.dataSet.save_dataframe_to_csv(metadata, "cell_metadata", self.get_analysis_name())
