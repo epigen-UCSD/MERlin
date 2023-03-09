@@ -29,6 +29,7 @@ class PlotPerformance(analysistask.AnalysisTask):
             self.parameters["exclude_plots"] = []
 
         self.taskTypes = [
+            "warp_task",
             "decode_task",
             "filter_task",
             "optimize_task",
