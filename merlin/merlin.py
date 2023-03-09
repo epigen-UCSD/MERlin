@@ -48,9 +48,6 @@ def build_parser():
     parser.add_argument("-e", "--data-home", help="the data home directory")
     parser.add_argument("-s", "--analysis-home", help="the analysis home directory")
     parser.add_argument("-k", "--snakemake-parameters", help="the name of the snakemake parameters file")
-    parser.add_argument(
-        "--no_report", help="flag indicating that the snakemake stats " + "should not be shared to improve MERlin"
-    )
     parser.add_argument("-f", "--fovs", help="filename containing list of FOVs to process")
 
     return parser
@@ -132,7 +129,7 @@ def merlin():
                 with open(os.sep.join([m.SNAKEMAKE_PARAMETERS_HOME, args.snakemake_parameters])) as f:
                     snakemakeParameters = json.load(f)
 
-            run_with_snakemake(dataSet, snakefilePath, args.core_count, snakemakeParameters, not args.no_report)
+            run_with_snakemake(dataSet, snakefilePath, args.core_count, snakemakeParameters)
 
 
 def generate_analysis_tasks_and_snakefile(dataSet: dataset.MERFISHDataSet, parametersFile: TextIO) -> str:
@@ -148,8 +145,7 @@ def run_with_snakemake(
     dataSet: dataset.MERFISHDataSet,
     snakefilePath: str,
     coreCount: int,
-    snakemakeParameters: Dict = {},
-    report: bool = True,
+    snakemakeParameters: Dict = {}
 ):
     print("Running MERlin pipeline through snakemake")
     snakemake.snakemake(
@@ -160,37 +156,3 @@ def run_with_snakemake(
         lock=False,
         **snakemakeParameters
     )
-
-    if report:
-        reportTime = int(time.time())
-        try:
-            with open(snakefilePath + ".stats", "r") as f:
-                requests.post(
-                    "http://merlin.georgeemanuel.com/post",
-                    files={"file": (".".join(["snakestats", dataSet.dataSetName, str(reportTime)]) + ".csv", f)},
-                    timeout=10,
-                )
-        except requests.exceptions.RequestException:
-            pass
-
-        analysisParameters = {t: dataSet.load_analysis_task(t).get_parameters() for t in dataSet.get_analysis_tasks()}
-        datasetMeta = {
-            "image_width": dataSet.get_image_dimensions()[0],
-            "image_height": dataSet.get_image_dimensions()[1],
-            "barcode_length": dataSet.get_codebook().get_bit_count(),
-            "barcode_count": dataSet.get_codebook().get_barcode_count(),
-            "fov_count": len(dataSet.get_fovs()),
-            "z_count": len(dataSet.get_z_positions()),
-            "sequential_count": len(dataSet.get_data_organization().get_sequential_rounds()),
-            "dataset_name": dataSet.dataSetName,
-            "report_time": reportTime,
-            "analysis_parameters": analysisParameters,
-        }
-        try:
-            requests.post(
-                "http://merlin.georgeemanuel.com/post",
-                files={"file": (".".join([dataSet.dataSetName, str(reportTime)]) + ".json", json.dumps(datasetMeta))},
-                timeout=10,
-            )
-        except requests.exceptions.RequestException:
-            pass
