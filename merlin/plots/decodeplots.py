@@ -1,297 +1,210 @@
-from matplotlib import pyplot as plt
 import numpy as np
-import pandas
+import pandas as pd
+from matplotlib import pyplot as plt
 
-from merlin.plots._base import AbstractPlot, PlotMetadata
 from merlin.analysis import filterbarcodes
+from merlin.plots._base import AbstractPlot, PlotMetadata
 
 
 class MinimumDistanceDistributionPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"decode_task": "all"})
+        self.set_required_metadata(DecodedBarcodesMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
+    def create_plot(self, **kwargs):
+        metadata = kwargs["metadata"]["decodeplots/DecodedBarcodesMetadata"]
 
-    def get_required_tasks(self):
-        return {'decode_task': 'all'}
-
-    def get_required_metadata(self):
-        return [DecodedBarcodesMetadata]
-
-    def _generate_plot(self, inputTasks, inputMetadata):
-        decodeMetadata = inputMetadata[
-            'decodeplots/DecodedBarcodesMetadata']
-
-        distanceX = decodeMetadata.distanceBins[:-1]
-        shift = (distanceX[0] + distanceX[1]) / 2
-        distanceX = [x + shift for x in distanceX]
+        distance = metadata.distance_bins[:-1]
+        shift = (distance[0] + distance[1]) / 2
+        distance = [x + shift for x in distance]
 
         fig = plt.figure(figsize=(4, 4))
-        plt.bar(distanceX, decodeMetadata.distanceCounts)
-        plt.xlabel('Barcode distance')
-        plt.ylabel('Count')
-        plt.title('Distance distribution for all barcodes')
+        plt.bar(distance, metadata.distance_counts)
+        plt.xlabel("Barcode distance")
+        plt.ylabel("Count")
+        plt.title("Distance distribution for all barcodes")
 
         return fig
 
 
 class AreaDistributionPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"decode_task": "all"})
+        self.set_required_metadata(DecodedBarcodesMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
-
-    def get_required_tasks(self):
-        return {'decode_task': 'all'}
-
-    def get_required_metadata(self):
-        return [DecodedBarcodesMetadata]
-
-    def _generate_plot(self, inputTasks, inputMetadata):
-        decodeMetadata = inputMetadata[
-            'decodeplots/DecodedBarcodesMetadata']
-        areaX = decodeMetadata.areaBins[:-1]
-        shift = (areaX[0] + areaX[1]) / 2
-        areaX = [x + shift for x in areaX]
+    def create_plot(self, **kwargs):
+        metadata = kwargs["metadata"]["decodeplots/DecodedBarcodesMetadata"]
+        area = metadata.area_bins[:-1]
+        shift = (area[0] + area[1]) / 2
+        area = [x + shift for x in area]
 
         fig = plt.figure(figsize=(4, 4))
-        plt.bar(areaX, decodeMetadata.areaCounts,
-                width=2*shift)
-        plt.xlabel('Barcode area (pixels)')
-        plt.ylabel('Count')
-        plt.title('Area distribution for all barcodes')
+        plt.bar(area, metadata.area_counts, width=2 * shift)
+        plt.xlabel("Barcode area (pixels)")
+        plt.ylabel("Count")
+        plt.title("Area distribution for all barcodes")
 
         return fig
 
 
 class MeanIntensityDistributionPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"decode_task": "all"})
+        self.set_required_metadata(DecodedBarcodesMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
-
-    def get_required_tasks(self):
-        return {'decode_task': 'all'}
-
-    def get_required_metadata(self):
-        return [DecodedBarcodesMetadata]
-
-    def _generate_plot(self, inputTasks, inputMetadata):
-        decodeMetadata = inputMetadata[
-            'decodeplots/DecodedBarcodesMetadata']
-        intensityX = decodeMetadata.intensityBins[:-1]
-        shift = (intensityX[0] + intensityX[1]) / 2
-        intensityX = [x + shift for x in intensityX]
+    def create_plot(self, **kwargs):
+        metadata = kwargs["metadata"]["decodeplots/DecodedBarcodesMetadata"]
+        intensity = metadata.intensity_bins[:-1]
+        shift = (intensity[0] + intensity[1]) / 2
+        intensity = [x + shift for x in intensity]
 
         fig = plt.figure(figsize=(4, 4))
-        plt.bar(intensityX, decodeMetadata.intensityCounts,
-                width=2*shift)
-        plt.xlabel('Mean intensity ($log_{10}$)')
-        plt.ylabel('Count')
-        plt.title('Intensity distribution for all barcodes')
+        plt.bar(intensity, metadata.intensity_counts, width=2 * shift)
+        plt.xlabel("Mean intensity ($log_{10}$)")
+        plt.ylabel("Count")
+        plt.title("Intensity distribution for all barcodes")
 
         return fig
 
 
 class DecodedBarcodeAbundancePlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"decode_task": "all"})
+        self.set_required_metadata(DecodedBarcodesMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
+    def create_plot(self, **kwargs):
+        decode_task = kwargs["tasks"]["decode_task"]
+        codebook = decode_task.get_codebook()
+        metadata = kwargs["metadata"]["decodeplots/DecodedBarcodesMetadata"]
 
-    def get_required_tasks(self):
-        return {'decode_task': 'all'}
+        counts = pd.DataFrame(
+            metadata.barcode_counts, index=np.arange(len(metadata.barcode_counts)), columns=["counts"]
+        )
 
-    def get_required_metadata(self):
-        return [DecodedBarcodesMetadata]
-
-    def _generate_plot(self, inputTasks, inputMetadata):
-        decodeTask = inputTasks['decode_task']
-        codebook = decodeTask.get_codebook()
-        decodeMetadata = inputMetadata[
-            'decodeplots/DecodedBarcodesMetadata']
-
-        barcodeCounts = decodeMetadata.barcodeCounts
-        countDF = pandas.DataFrame(decodeMetadata.barcodeCounts,
-                                   index=np.arange(len(barcodeCounts)),
-                                   columns=['counts'])
-
-        codingDF = countDF[countDF.index.isin(codebook.get_coding_indexes())]\
-            .sort_values(by='counts', ascending=False)
-        blankDF = countDF[countDF.index.isin(codebook.get_blank_indexes())]\
-            .sort_values(by='counts', ascending=False)
+        gene_counts = counts[counts.index.isin(codebook.get_coding_indexes())].sort_values(
+            by="counts", ascending=False
+        )
+        blank_counts = counts[counts.index.isin(codebook.get_blank_indexes())].sort_values(
+            by="counts", ascending=False
+        )
 
         fig = plt.figure(figsize=(10, 5))
-        plt.plot(np.arange(len(codingDF)), np.log10(codingDF['counts']),
-                 'b.')
-        plt.plot(np.arange(len(codingDF), len(countDF)),
-                 np.log10(blankDF['counts']), 'r.')
-        plt.xlabel('Sorted barcode index')
-        plt.ylabel('Count (log10)')
-        plt.title('Barcode abundances')
-        plt.legend(['Coding', 'Blank'])
+        plt.plot(np.arange(len(gene_counts)), np.log10(gene_counts["counts"]), "b.")
+        plt.plot(np.arange(len(gene_counts), len(counts)), np.log10(blank_counts["counts"]), "r.")
+        plt.xlabel("Sorted barcode index")
+        plt.ylabel("Count (log10)")
+        plt.title("Barcode abundances")
+        plt.legend(["Coding", "Blank"])
 
         return fig
 
 
 class AreaIntensityViolinPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"decode_task": "all"})
+        self.set_required_metadata(DecodedBarcodesMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
+    def create_plot(self, **kwargs):
+        metadata = kwargs["metadata"]["decodeplots/DecodedBarcodesMetadata"]
+        tasks = kwargs["tasks"]
 
-    def get_required_tasks(self):
-        return {'decode_task': 'all'}
+        bins = metadata.intensity_bins[:-1]
 
-    def get_required_metadata(self):
-        return [DecodedBarcodesMetadata]
+        def distribution_dict(count_list):
+            if np.max(count_list) > 0:
+                return {
+                    "coords": bins,
+                    "vals": count_list,
+                    "mean": np.average(bins, weights=count_list),
+                    "median": np.average(bins, weights=count_list),
+                    "min": bins[np.nonzero(count_list)[0]],
+                    "max": bins[np.nonzero(count_list)[-1]],
+                }
+            return {"coords": bins, "vals": count_list, "mean": 0, "median": 0, "min": 0, "max": 0}
 
-    def _generate_plot(self, inputTasks, inputMetadata):
-        decodeTask = inputTasks['decode_task']
-        decodeMetadata = inputMetadata[
-            'decodeplots/DecodedBarcodesMetadata']
-
-        bins = decodeMetadata.intensityBins[:-1]
-
-        def distribution_dict(countList):
-            if np.max(countList) > 0:
-                return {'coords': bins,
-                        'vals': countList,
-                        'mean': np.average(bins, weights=countList),
-                        'median': np.average(bins, weights=countList),
-                        'min': bins[np.nonzero(countList)[0]],
-                        'max': bins[np.nonzero(countList)[-1]]}
-            else:
-                return {'coords': bins,
-                        'vals': countList,
-                        'mean': 0,
-                        'median': 0,
-                        'min': 0,
-                        'max': 0}
-
-        vpstats = [distribution_dict(x) for x in
-                   decodeMetadata.intensityCountsByArea]
+        vpstats = [distribution_dict(x) for x in metadata.intensity_by_area]
 
         fig = plt.figure(figsize=(15, 5))
         ax = plt.subplot(1, 1, 1)
-        ax.violin(vpstats, positions=decodeMetadata.areaBins[:-1],
-                  showmeans=True, showextrema=False)
+        ax.violin(vpstats, positions=metadata.area_bins[:-1], showmeans=True, showextrema=False)
 
-        if 'filter_task' in inputTasks and isinstance(
-                inputTasks['filter_task'],
-                filterbarcodes.FilterBarcodes):
-            plt.axvline(
-                x=inputTasks['filter_task'].parameters['area_threshold'] - 0.5,
-                color='green', linestyle=':')
-            plt.axhline(y=np.log10(
-                inputTasks['filter_task'].parameters['intensity_threshold']),
-                color='green', linestyle=':')
+        if "filter_task" in tasks and isinstance(tasks["filter_task"], filterbarcodes.FilterBarcodes):
+            plt.axvline(x=tasks["filter_task"].parameters["area_threshold"] - 0.5, color="green", linestyle=":")
+            plt.axhline(
+                y=np.log10(tasks["filter_task"].parameters["intensity_threshold"]), color="green", linestyle=":"
+            )
 
-        plt.xlabel('Barcode area (pixels)')
-        plt.ylabel('Mean intensity ($log_{10}$)')
-        plt.title('Intensity distribution by barcode area')
+        plt.xlabel("Barcode area (pixels)")
+        plt.ylabel("Mean intensity ($log_{10}$)")
+        plt.title("Intensity distribution by barcode area")
         plt.xlim([0, 17])
 
         return fig
 
 
 class DecodedBarcodesMetadata(PlotMetadata):
+    def __init__(self, plot_task, required_tasks):
+        super().__init__(plot_task, required_tasks)
 
-    def __init__(self, analysisTask, taskDict):
-        super().__init__(analysisTask, taskDict)
-        self.decodeTask = self._taskDict['decode_task']
-        codebook = self.decodeTask.get_codebook()
+        self.decode_task = self.required_tasks["decode_task"]
+        self.queued_data = []
 
-        self.completeFragments = self._load_numpy_metadata(
-            'complete_fragments', [False]*len(self.decodeTask.fragment_list()))
-        self.areaBins = np.arange(25)
-        self.areaCounts = self._load_numpy_metadata(
-            'area_counts', np.zeros(len(self.areaBins)-1))
+        self.area_bins = np.arange(25)
 
-        self.barcodeCounts = self._load_numpy_metadata(
-            'barcode_counts', np.zeros(codebook.get_barcode_count()))
-        if np.sum(self.completeFragments) >= min(
-                20, len(self.decodeTask.fragment_list())):
-            self.intensityBins = self._load_numpy_metadata('intensity_bins')
-            self.intensityCounts = self._load_numpy_metadata(
-                'intensity_counts', np.zeros(len(self.intensityBins)-1))
-            self.distanceBins = self._load_numpy_metadata('distance_bins')
-            self.distanceCounts = self._load_numpy_metadata(
-                'distance_counts', np.zeros(len(self.distanceBins)-1))
-            self.intensityCountsByArea = self._load_numpy_metadata(
-                'intensity_by_area',
-                np.zeros((len(self.areaBins)-1, len(self.intensityBins)-1)))
-            self.binsDetermined = True
+        self.register_updaters({"decode_task": self.process_barcodes})
+        self.register_datasets(
+            "barcode_counts",
+            "area_counts",
+            "intensity_bins",
+            "intensity_counts",
+            "distance_bins",
+            "distance_counts",
+            "intensity_by_area",
+        )
 
-        self.binsDetermined = False
-        self.queuedBarcodeData = []
+    def _determine_bins(self) -> None:
+        barcode_data = pd.concat(self.queued_data)
+        min_intensity = np.log10(barcode_data["mean_intensity"].min())
+        max_intensity = np.log10(barcode_data["mean_intensity"].max())
+        self.intensity_bins = np.linspace(min_intensity, max_intensity, 100)
 
-    def _determine_bins(self):
-        aggregateDF = pandas.concat(self.queuedBarcodeData)
-        minIntensity = np.log10(aggregateDF['mean_intensity'].min())
-        maxIntensity = np.log10(aggregateDF['mean_intensity'].max())
-        self.intensityBins = np.linspace(minIntensity, maxIntensity, 100)
+        min_distance = barcode_data["min_distance"].min()
+        max_distance = barcode_data["min_distance"].max()
+        self.distance_bins = np.linspace(min_distance, max_distance, 100)
 
-        minDistance = aggregateDF['min_distance'].min()
-        maxDistance = aggregateDF['min_distance'].max()
-        self.distanceBins = np.linspace(minDistance, maxDistance, 100)
+        codebook = self.decode_task.get_codebook()
+        self.barcode_counts = np.zeros(codebook.get_barcode_count())
+        self.area_counts = np.zeros(len(self.area_bins) - 1)
+        self.intensity_by_area = np.zeros((len(self.area_bins) - 1, len(self.intensity_bins) - 1))
+        self.distance_counts = np.zeros(len(self.distance_bins) - 1)
+        self.intensity_counts = np.zeros(len(self.intensity_bins) - 1)
 
-        self.intensityCountsByArea = \
-            np.zeros((len(self.areaBins)-1, len(self.intensityBins)-1))
-        self.distanceCounts = np.zeros(len(self.distanceBins)-1)
-        self.intensityCounts = np.zeros(len(self.intensityBins)-1)
+    def _extract_from_barcodes(self, barcodes) -> None:
+        self.barcode_counts += np.histogram(barcodes["barcode_id"], bins=np.arange(len(self.barcode_counts) + 1))[0]
+        self.area_counts += np.histogram(barcodes["area"], bins=self.area_bins)[0]
+        self.intensity_counts += np.histogram(np.log10(barcodes["mean_intensity"]), bins=self.intensity_bins)[0]
+        self.distance_counts += np.histogram(np.log10(barcodes["min_distance"]), bins=self.distance_bins)[0]
 
-        self._save_numpy_metadata(self.intensityBins, 'intensity_bins')
-        self._save_numpy_metadata(self.distanceBins, 'distance_bins')
+        for i, current_area in enumerate(self.area_bins[:-1]):
+            self.intensity_by_area[i, :] += np.histogram(
+                np.log10(barcodes[barcodes["area"] == current_area]["mean_intensity"]), bins=self.intensity_bins
+            )[0]
 
-        self.binsDetermined = True
-
-    def _extract_from_barcodes(self, barcodes):
-        self.barcodeCounts += np.histogram(
-            barcodes['barcode_id'],
-            bins=np.arange(len(self.barcodeCounts)+1))[0]
-
-        self.areaCounts += np.histogram(barcodes['area'],
-                                        bins=self.areaBins)[0]
-        self.intensityCounts += np.histogram(
-            np.log10(barcodes['mean_intensity']), bins=self.intensityBins)[0]
-        self.distanceCounts += np.histogram(
-            np.log10(barcodes['min_distance']), bins=self.distanceBins)[0]
-
-        for i, currentArea in enumerate(self.areaBins[:-1]):
-            self.intensityCountsByArea[i, :] += np.histogram(
-                np.log10(barcodes[barcodes['area'] == currentArea][
-                    'mean_intensity']),
-                bins=self.intensityBins)[0]
-
-    def update(self) -> None:
-        updated = False
-        decodeTask = self._taskDict['decode_task']
-
-        for i, fragmentName in enumerate(decodeTask.dataSet.get_fovs()):
-            if not self.completeFragments[i] and decodeTask.is_complete(fragmentName):
-                self.completeFragments[i] = True
-
-                self.queuedBarcodeData.append(
-                    decodeTask.get_barcode_database().get_barcodes(
-                        fragmentName,
-                        columnList=['barcode_id', 'area', 'mean_intensity',
-                                    'min_distance']))
-
-                if np.sum(self.completeFragments) \
-                        >= min(20, len(decodeTask.fragment_list())):
-                    if not self.binsDetermined:
-                        self._determine_bins()
-
-                    for bcData in self.queuedBarcodeData:
-                        self._extract_from_barcodes(bcData)
-                        updated = True
-                    self.queuedBarcodeData = []
-
-        if updated:
-            self._save_numpy_metadata(self.completeFragments,
-                                      'complete_fragments')
-            self._save_numpy_metadata(self.barcodeCounts, 'barcode_counts')
-            self._save_numpy_metadata(self.areaCounts, 'area_counts')
-            self._save_numpy_metadata(self.intensityCounts, 'intensity_counts')
-            self._save_numpy_metadata(self.distanceCounts, 'distance_counts')
-            self._save_numpy_metadata(self.intensityCountsByArea,
-                                      'intensity_by_area')
-
-    def is_complete(self) -> bool:
-        return all(self.completeFragments)
+    def process_barcodes(self, fov) -> None:
+        barcodes = self.decode_task.get_barcode_database().get_barcodes(
+            fov, columnList=["barcode_id", "area", "mean_intensity", "min_distance"]
+        )
+        if not hasattr(self, "intensity_bins"):  # Still waiting for 20 fovs to complete
+            self.queued_data.append(barcodes)
+            if len(self.queued_data) >= min(20, len(self.decode_task.fragment_list()) - 1):
+                self._determine_bins()
+                for barcode_data in self.queued_data:
+                    self._extract_from_barcodes(barcode_data)
+                self.queued_data = []
+        else:
+            self._extract_from_barcodes(barcodes)

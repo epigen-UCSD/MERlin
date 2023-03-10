@@ -1,46 +1,30 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-from merlin.plots._base import AbstractPlot
-from merlin.plots._base import PlotMetadata
+from merlin.plots._base import AbstractPlot, PlotMetadata
 
 
 class TestPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"test_task": "all"})
+        self.set_required_metadata(TestPlotMetadata)
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
-
-    def get_required_tasks(self):
-        return {'test_task': 'all'}
-
-    def get_required_metadata(self):
-        return [TestPlotMetadata]
-
-    def _generate_plot(self, inputTasks, inputMetadata):
+    def create_plot(self, **kwargs):
         fig = plt.figure(figsize=(10, 10))
-        plt.plot(inputMetadata['testplots/TestPlotMetadata'].get_mean_values(),
-                 'x')
+        plt.plot(kwargs["metadata"]["testplots/TestPlotMetadata"].get_mean_values(), "x")
         return fig
 
 
 class TestPlotMetadata(PlotMetadata):
-
-    def __init__(self, analysisTask, taskDict):
-        super().__init__(analysisTask, taskDict)
-        self.testTask = self._taskDict['test_task']
-        self.completeFragments = [False]*len(self.testTask.fragment_list())
-        self.meanValues = np.zeros(len(self.testTask.fragment_list()))
+    def __init__(self, plot_task, required_tasks):
+        super().__init__(plot_task, required_tasks)
+        self.test_task = self.required_tasks["test_task"]
+        self.meanValues = np.zeros(len(self.test_task.fragment_list()))
+        self.register_updaters({"test_task": self.process})
 
     def get_mean_values(self) -> np.ndarray:
         return self.meanValues
 
-    def update(self) -> None:
-        testTask = self._taskDict['test_task']
-
-        for i, fragmentName in enumerate(testTask.dataSet.get_fovs()):
-            if not self.completeFragments[i] and testTask.is_complete(fragmentName):
-                self.meanValues[i] = np.mean(self.testTask.get_random_result(i))
-                self.completeFragments[i] = True
-
-    def is_complete(self) -> bool:
-        return all(self.completeFragments)
+    def process(self, fragment) -> None:
+        self.meanValues[fragment] = np.mean(self.test_task.get_random_result(fragment))

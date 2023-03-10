@@ -580,7 +580,7 @@ class DataSet(object):
         if subdirectory is None:
             subdirectoryPath = os.sep.join([self.analysisPath, analysisName])
         else:
-            subdirectoryPath = os.sep.join([self.analysisPath, analysisName, subdirectory])
+            subdirectoryPath = os.sep.join([self.analysisPath, analysisName, str(subdirectory)])
 
         if create:
             os.makedirs(subdirectoryPath, exist_ok=True)

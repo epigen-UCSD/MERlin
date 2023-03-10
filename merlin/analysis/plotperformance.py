@@ -1,26 +1,17 @@
 import os
-from matplotlib import pyplot as plt
-import pandas
-import merlin
-import seaborn
-import numpy as np
-from typing import List
-from merlin.core import analysistask
-from merlin.analysis import filterbarcodes
-from random import sample
 import time
 
+from matplotlib import pyplot as plt
+
+import merlin
 from merlin import plots
+from merlin.core import analysistask
 
 plt.style.use(os.sep.join([os.path.dirname(merlin.__file__), "ext", "default.mplstyle"]))
 
 
 class PlotPerformance(analysistask.AnalysisTask):
-
-    """
-    An analysis task that generates plots depicting metrics of the MERFISH
-    decoding.
-    """
+    """An analysis task that generates plots depicting metrics of the MERFISH decoding."""
 
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
@@ -54,4 +45,4 @@ class PlotPerformance(analysistask.AnalysisTask):
         }
         plotEngine = plots.PlotEngine(self, taskDict)
         while not plotEngine.take_step():
-            pass
+            time.sleep(2)

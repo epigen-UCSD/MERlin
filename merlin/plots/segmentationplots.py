@@ -1,45 +1,38 @@
 from matplotlib import pyplot as plt
-import numpy as np
 
+from merlin.analysis.segment import FeatureSavingAnalysisTask
 from merlin.plots._base import AbstractPlot
 
 
 class SegmentationBoundaryPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"segment_task": FeatureSavingAnalysisTask})
 
-    def __init__(self, analysisTask):
-        super().__init__(analysisTask)
-
-    def get_required_tasks(self):
-        return {'segment_task': 'all'}
-
-    def get_required_metadata(self):
-        return []
-
-    def _generate_plot(self, inputTasks, inputMetadata):
-        featureDB = inputTasks['segment_task'].get_feature_database()
-        features = featureDB.read_features()
+    def create_plot(self, **kwargs):
+        feature_db = kwargs["tasks"]["segment_task"].get_feature_database()
+        features = feature_db.read_features()
 
         fig = plt.figure(figsize=(15, 15))
         ax = fig.add_subplot(111)
-        ax.set_aspect('equal', 'datalim')
+        ax.set_aspect("equal", "datalim")
 
         if len(features) == 0:
             return fig
 
-        zPosition = 0
+        z_position = 0
         if len(features[0].get_boundaries()) > 1:
-            zPosition = int(len(features[0].get_boundaries())/2)
+            z_position = int(len(features[0].get_boundaries()) / 2)
 
-        featuresSingleZ = [feature.get_boundaries()[int(zPosition)]
-                           for feature in features]
-        featuresSingleZ = [x for y in featuresSingleZ for x in y]
-        allCoords = [[feature.exterior.coords.xy[0].tolist(),
-                      feature.exterior.coords.xy[1].tolist()]
-                     for feature in featuresSingleZ]
-        allCoords = [x for y in allCoords for x in y]
-        plt.plot(*allCoords)
+        features_z = [feature.get_boundaries()[int(z_position)] for feature in features]
+        features_z = [x for y in features_z for x in y]
+        coords = [
+            [feature.exterior.coords.xy[0].tolist(), feature.exterior.coords.xy[1].tolist()] for feature in features_z
+        ]
+        coords = [x for y in coords for x in y]
+        plt.plot(*coords)
 
-        plt.xlabel('X position (microns)')
-        plt.ylabel('Y position (microns)')
-        plt.title('Segmentation boundaries')
+        plt.xlabel("X position (microns)")
+        plt.ylabel("Y position (microns)")
+        plt.title("Segmentation boundaries")
         return fig
