@@ -33,6 +33,19 @@ class YDriftViolinPlot(AbstractPlot):
         data = kwargs["metadata"]["driftplots/DriftCorrectionMetadata"].drifts
         return make_drift_violin_plot(data, "Y drift")
 
+class ZDriftViolinPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"warp_task": "all"})
+        self.set_required_metadata(DriftCorrectionMetadata)
+
+    def create_plot(self, **kwargs):
+        data = kwargs["metadata"]["driftplots/DriftCorrectionMetadata"].drifts
+        if "Z drift" in data:
+            return make_drift_violin_plot(data, "Z drift")
+        else:
+            return None
+
 
 class DriftPathPlot(AbstractPlot):
     def __init__(self, plot_task):
@@ -62,7 +75,11 @@ class DriftCorrectionMetadata(PlotMetadata):
         self.register_updaters({"warp_task": self.process_update})
 
     def process_update(self, fragment):
-        drifts = pd.DataFrame(self.warp_task.get_transformation(fragment), columns=["X drift", "Y drift"])
+        drifts = self.warp_task.get_transformation(fragment)
+        columns = ["X drift", "Y drift"]
+        if drifts.shape[1] == 3:
+            columns = ["Z drift"] + columns
+        drifts = pd.DataFrame(self.warp_task.get_transformation(fragment), columns=columns)
         drifts["fov"] = fragment
         drifts = drifts.reset_index().rename(columns={"index": "Round"})
         drifts["Round"] += 1
