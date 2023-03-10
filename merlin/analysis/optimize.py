@@ -4,6 +4,7 @@ from skimage import transform
 from typing import Dict
 from typing import List
 import pandas
+import pathlib
 
 from merlin.analysis import decode
 from merlin.util import decoding
@@ -42,8 +43,10 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             self.parameters["fov_per_iteration"] = len(self.parameters["fov_index"])
 
         else:
-            self.parameters["fov_index"] = []
-            for i in range(self.parameters["fov_per_iteration"]):
+            path = self.dataSet._analysis_result_save_path("", self.analysisName)
+            files = pathlib.Path(path).glob("select_frame_*")
+            self.parameters["fov_index"] = [file.stem.split("select_frame_")[-1] for file in files]
+            for i in range(len(self.parameters["fov_index"]), self.parameters["fov_per_iteration"]):
                 fovIndex = np.random.choice(list(self.dataSet.get_fovs()))
                 zIndex = int(np.random.choice(list(range(len(self.dataSet.get_z_positions())))))
                 self.parameters["fov_index"].append(f"{fovIndex}__{zIndex}")
