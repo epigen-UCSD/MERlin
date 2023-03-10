@@ -22,6 +22,7 @@ class AbstractPlot(ABC):
             plot_task: the analysisTask where the plot should be saved.
         """
         self.plot_task = plot_task
+        self.formats = [".png", ".pdf"]
         self.set_required_tasks({})
         self.set_required_metadata([])
 
@@ -126,7 +127,9 @@ class AbstractPlot(ABC):
             return
         f = self.create_plot(tasks=tasks, metadata=metadata)
         f.tight_layout(pad=1)
-        self.plot_task.dataSet.save_figure(self.plot_task, f, self.figure_name(), type(self).__module__.split(".")[-1])
+        self.plot_task.dataSet.save_figure(
+            self.plot_task, f, self.figure_name(), type(self).__module__.split(".")[-1], formats=self.formats
+        )
         plt.close(f)
 
 

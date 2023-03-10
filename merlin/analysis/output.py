@@ -29,7 +29,7 @@ class FinalOutput(analysistask.AnalysisTask):
 
     def get_cell_metadata_table(self):
         try:
-            return self.dataSet.load_dataframe_from_csv("cell_metadata", self.get_analysis_name())
+            return self.dataSet.load_dataframe_from_csv("cell_metadata", self.get_analysis_name(), index_col=0)
         except FileNotFoundError:
             dfs = []
             cell_mapping = self.linkCellTask.get_cell_mapping()

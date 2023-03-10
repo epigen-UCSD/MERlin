@@ -125,9 +125,14 @@ class DataSet(object):
         return os.sep.join([self.analysisPath, "snakemake"])
 
     def save_figure(
-        self, analysisTask: TaskOrName, figure: plt.Figure, figureName: str, subdirectory: str = "figures"
+        self,
+        analysisTask: TaskOrName,
+        figure: plt.Figure,
+        figureName: str,
+        subdirectory: str = "figures",
+        formats=[".png", ".pdf"],
     ) -> None:
-        """Save the figure into the analysis results for this DataSet
+        """Save the figure into the analysis results for this DataSet.
 
         This function will save the figure in both png and pdf formats.
 
@@ -138,11 +143,14 @@ class DataSet(object):
                     extension
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
+            formats: formats to save figure as.
         """
         savePath = os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), figureName])
 
-        figure.savefig(savePath + ".png", pad_inches=0)
-        figure.savefig(savePath + ".pdf", transparent=True, pad_inches=0)
+        if ".png" in formats:
+            figure.savefig(savePath + ".png", pad_inches=0)
+        if ".pdf" in formats:
+            figure.savefig(savePath + ".pdf", transparent=True, pad_inches=0)
 
     def figure_exists(self, analysisTask: TaskOrName, figureName: str, subdirectory: str = "figures") -> bool:
         """Determine if a figure with the specified name has been

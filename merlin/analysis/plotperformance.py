@@ -28,6 +28,7 @@ class PlotPerformance(analysistask.AnalysisTask):
             "sum_task",
             "partition_task",
             "global_align_task",
+            "output_task"
         ]
 
     def get_estimated_memory(self):
