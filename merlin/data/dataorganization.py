@@ -58,7 +58,7 @@ class DataOrganization(object):
         converters = {"frame": _parse_int_list, "zPos": _parse_list, "fiducialFrame": _parse_optional_list}
         if filePath is not None:
             if not os.path.exists(filePath):
-                filePath = os.sep.join([merlin.DATA_ORGANIZATION_HOME, filePath])
+                filePath = merlin.DATA_ORGANIZATION_HOME / filePath
 
             self.data = pandas.read_csv(filePath, converters=converters)
             self.data["readoutName"] = self.data["readoutName"].str.strip()

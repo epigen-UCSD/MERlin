@@ -56,7 +56,7 @@ class AnalysisTask(ABC):
             self.parameters["merlin_version"] = merlin.version()
         else:
             if not merlin.is_compatible(self.parameters["merlin_version"]):
-                raise merlin.IncompatibleVersionException(
+                raise merlin.IncompatibleVersionError(
                     (
                         "Analysis task %s has already been created by MERlin "
                         + "version %s, which is incompatible with the current "

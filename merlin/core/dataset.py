@@ -81,7 +81,7 @@ class DataSet(object):
         try:
             oldMetadata = self.load_json_analysis_result("dataset", None)
             if not merlin.is_compatible(oldMetadata["merlin_version"]):
-                raise merlin.IncompatibleVersionException(
+                raise merlin.IncompatibleVersionError(
                     (
                         "Analysis was performed on dataset %s with MERlin "
                         + "version %s, which is not compatible with the current "
@@ -613,7 +613,7 @@ class DataSet(object):
             newVersion = newParameters["merlin_version"]
 
             if not merlin.is_compatible(existingVersion, newVersion):
-                raise merlin.IncompatibleVersionException(
+                raise merlin.IncompatibleVersionError(
                     (
                         "Analysis task with name %s has been previously created "
                         + "with MERlin version %s, which is incompatible with "
@@ -913,7 +913,7 @@ class ImageDataSet(DataSet):
             return reader.film_size()
 
     def _import_microscope_parameters(self, microscopeParametersName):
-        sourcePath = os.sep.join([merlin.MICROSCOPE_PARAMETERS_HOME, microscopeParametersName])
+        sourcePath = merlin.MICROSCOPE_PARAMETERS_HOME / microscopeParametersName
         destPath = os.sep.join([self.analysisPath, "microscope_parameters.json"])
 
         shutil.copyfile(sourcePath, destPath)

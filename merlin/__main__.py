@@ -1,3 +1,3 @@
-from .merlin import merlin
+from .merlin import run_merlin
 
-merlin()
+run_merlin()

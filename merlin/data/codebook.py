@@ -9,7 +9,7 @@ import merlin
 
 
 def _parse_barcode_from_string(inputString):
-    return np.array([int(x) for x in inputString if x is not " "])
+    return np.array([int(x) for x in inputString if x != " "])
 
 
 class Codebook(object):
@@ -30,7 +30,7 @@ class Codebook(object):
         """
         self._dataSet = dataSet
         if not os.path.exists(filePath):
-            filePath = os.sep.join([merlin.CODEBOOK_HOME, filePath])
+            filePath = merlin.CODEBOOK_HOME / filePath
 
         newVersion = True
         with open(filePath, "r") as f:
