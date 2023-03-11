@@ -971,6 +971,7 @@ class MERFISHDataSet(ImageDataSet):
         analysisHome: str = None,
         microscopeParametersName: str = None,
         fovList: str = None,
+        profile: bool = False
     ):
         """Create a MERFISH dataset for the specified raw data.
 
@@ -1002,6 +1003,7 @@ class MERFISHDataSet(ImageDataSet):
         """
         super().__init__(dataDirectoryName, dataHome, analysisHome, microscopeParametersName)
 
+        self.profile = profile
         self.dataOrganization = dataorganization.DataOrganization(self, dataOrganizationName, fovList)
         if codebookNames:
             self.codebooks = [codebook.Codebook(self, name, i) for i, name in enumerate(codebookNames)]

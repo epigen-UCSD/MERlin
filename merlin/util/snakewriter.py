@@ -65,6 +65,8 @@ class SnakemakeRule(object):
                 '"',
             ]
         )
+        if self._analysisTask.dataSet.profile:
+            shellString += " --profile"
         return shellString
 
     def _generate_shell(self) -> str:

@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-s", "--analysis-home", help="the analysis home directory")
     parser.add_argument("-k", "--snakemake-parameters", help="the name of the snakemake parameters file")
     parser.add_argument("-f", "--fovs", help="filename containing list of FOVs to process")
+    parser.add_argument("--profile", action="store_true", help="profile tasks and dump to logs")
 
     return parser
 
@@ -96,6 +97,7 @@ def run_merlin() -> None:
         dataHome=clean_string_arg(args.data_home),
         analysisHome=clean_string_arg(args.analysis_home),
         fovList=clean_string_arg(args.fovs),
+        profile=args.profile
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME

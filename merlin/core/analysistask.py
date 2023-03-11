@@ -119,14 +119,14 @@ class AnalysisTask(ABC):
 
             self.dataSet.record_analysis_started(self)
             self._indicate_running()
-            if self.parameters["profile"]:
+            if self.dataSet.profile:
                 profiler = cProfile.Profile()
                 profiler.enable()
                 self._run_analysis()
                 profiler.disable()
                 stat_string = io.StringIO()
                 stats = pstats.Stats(profiler, stream=stat_string)
-                stats.sort_stats("cumulative")
+                stats.sort_stats("time")
                 stats.print_stats()
                 logger.info(stat_string.getvalue())
             else:
@@ -332,14 +332,14 @@ class ParallelAnalysisTask(AnalysisTask):
 
                 self.dataSet.record_analysis_started(self, fragmentName)
                 self._indicate_running(fragmentName)
-                if self.parameters["profile"]:
+                if self.dataSet.profile:
                     profiler = cProfile.Profile()
                     profiler.enable()
                     self._run_analysis(fragmentName)
                     profiler.disable()
                     stat_string = io.StringIO()
                     stats = pstats.Stats(profiler, stream=stat_string)
-                    stats.sort_stats("cumulative")
+                    stats.sort_stats("time")
                     stats.print_stats()
                     logger.info(stat_string.getvalue())
                 else:
