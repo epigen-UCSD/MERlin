@@ -368,9 +368,10 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             else:
                 mask = np.array([expand_labels(frame, self.parameters["dilate_cells"]) for frame in mask])
         metadata = pd.DataFrame(regionprops_table(mask, properties=["label", "area", "centroid"]))
-        columns = ["cell_id", "volume", "x", "y"]
+        columns = ["cell_id", "volume"]
         if mask.ndim == 3:
             columns.append("z")
+        columns.extend(["x", "y"])
         metadata.columns = columns
         metadata["x"] *= downscale
         metadata["y"] *= downscale
