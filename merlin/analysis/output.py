@@ -83,4 +83,9 @@ class FinalOutput(analysistask.AnalysisTask):
         adata.obs["fov"] = [cell_id.split("__")[0] for cell_id in adata.obs.index]
         adata.layers["counts"] = adata.X
         sc.pp.calculate_qc_metrics(adata, percent_top=None, inplace=True)
+        sc.pp.normalize_total(adata)
+        sc.pp.log1p(adata, base=2)
+        sc.pp.neighbors(adata, n_neighbors=30, use_rep="X", metric="cosine")
+        sc.tl.leiden(adata)
+        sc.tl.umap(adata, min_dist=0.3)
         self.dataSet.save_scanpy_analysis_result(adata, "scanpy_object", self)

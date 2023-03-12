@@ -30,3 +30,5 @@ xmltodict
 google-cloud-storage
 docutils
 zarr
+scanpy
+leidenalg
