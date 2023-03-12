@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 
 from merlin.analysis.output import FinalOutput
 from merlin.analysis.segment import CellposeSegment, FeatureSavingAnalysisTask
+from merlin.plots import tools
 from merlin.plots._base import AbstractPlot
 
 
@@ -103,18 +104,6 @@ class CellVolumeHistogramPlot(AbstractPlot):
     def create_plot(self, **kwargs) -> plt.Figure:
         output_task = kwargs["tasks"]["output_task"]
         metadata = output_task.get_cell_metadata_table()
-        fig = plt.figure()
-        ax = sns.histplot(data=metadata, x="volume", kde=True, line_kws={"linestyle": "--"})
-        ax.lines[0].set_color("#555555")
+        fig = tools.plot_histogram(metadata, "volume")
         plt.xlabel("Cell volume (pixels)")
-        median = metadata["volume"].median()
-        plt.axvline(median, linestyle=":", color="tab:red")
-        plt.text(
-            x=median + ax.get_xlim()[1] * 0.01,
-            y=ax.get_ylim()[1] * 0.98,
-            s=f"median = {median:.0f}",
-            c="tab:red",
-            va="top",
-            ha="left",
-        )
         return fig

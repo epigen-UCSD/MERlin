@@ -27,6 +27,9 @@ class FinalOutput(analysistask.AnalysisTask):
         )
         return volumes.groupby("label").max()
 
+    def get_scanpy_object(self):
+        return self.dataSet.load_scanpy_analysis_result("scanpy_object", self)
+
     def get_cell_metadata_table(self):
         try:
             return self.dataSet.load_dataframe_from_csv("cell_metadata", self.get_analysis_name(), index_col=0)
@@ -79,4 +82,5 @@ class FinalOutput(analysistask.AnalysisTask):
         adata.obs["volume"] = celldata["volume"]
         adata.obs["fov"] = [cell_id.split("__")[0] for cell_id in adata.obs.index]
         adata.layers["counts"] = adata.X
+        sc.pp.calculate_qc_metrics(adata, percent_top=None, inplace=True)
         self.dataSet.save_scanpy_analysis_result(adata, "scanpy_object", self)
