@@ -4,6 +4,7 @@ import shutil
 import pandas
 import numpy as np
 import scanpy as sc
+from pathlib import Path
 import tifffile
 import importlib
 import time
@@ -839,7 +840,7 @@ class DataSet(object):
         return self._check_analysis_event(analysisTask, "done", fragmentIndex)
 
     def analysis_done_filename(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> str:
-        return self._analysis_status_file(analysisTask, "done", fragmentIndex)
+        return Path(self._analysis_status_file(analysisTask, "done", fragmentIndex))
 
     def check_analysis_error(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
         return self._check_analysis_event(analysisTask, "error", fragmentIndex)

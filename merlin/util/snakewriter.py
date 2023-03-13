@@ -1,171 +1,139 @@
 import importlib
+import textwrap
+
 import networkx
-from merlin.core import analysistask
-from merlin.core import dataset
+
+from merlin.core import analysistask, dataset
 
 
-class SnakemakeRule(object):
-    def __init__(self, analysisTask: analysistask.AnalysisTask, pythonPath=None):
-        self._analysisTask = analysisTask
-        self._pythonPath = pythonPath
-
-    @staticmethod
-    def _add_quotes(stringIn):
-        return "'%s'" % stringIn
-
-    @staticmethod
-    def _clean_string(stringIn):
-        return stringIn.replace("\\", "/")
-
-    def _expand_as_string(self, taskName, fragments) -> str:
-        filename = self._add_quotes(self._analysisTask.dataSet.analysis_done_filename(taskName, "{g}"))
-        return f"expand({filename}, g={list(fragments)})"
-
-    def _generate_output(self) -> str:
-        if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
-            return self._clean_string(
-                self._add_quotes(self._analysisTask.dataSet.analysis_done_filename(self._analysisTask, "{i}"))
-            )
-        else:
-            return self._clean_string(
-                self._add_quotes(self._analysisTask.dataSet.analysis_done_filename(self._analysisTask))
-            )
-
-    def _generate_current_task_inputs(self):
-        inputTasks = [self._analysisTask.dataSet.load_analysis_task(x) for x in self._analysisTask.get_dependencies()]
-        if len(inputTasks) > 0:
-            inputString = ",".join(
-                ["ancient(" + self._add_quotes(x.dataSet.analysis_done_filename(x)) + ")" for x in inputTasks]
-            )
-        else:
-            inputString = ""
-
-        return self._clean_string(inputString)
-
-    def _generate_message(self) -> str:
-        messageString = "".join(["Running ", self._analysisTask.get_analysis_name()])
-        if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
-            messageString += " {wildcards.i}"
-        return self._add_quotes(messageString)
-
-    def _base_shell_command(self) -> str:
-        if self._pythonPath is None:
-            shellString = "python "
-        else:
-            shellString = self._clean_string(self._pythonPath) + " "
-        shellString += "".join(
-            [
-                "-m merlin -t ",
-                self._clean_string(self._analysisTask.analysisName),
-                ' -e "',
-                self._clean_string(self._analysisTask.dataSet.dataHome),
-                '"',
-                ' -s "',
-                self._clean_string(self._analysisTask.dataSet.analysisHome),
-                '"',
-            ]
-        )
-        if self._analysisTask.dataSet.profile:
-            shellString += " --profile"
-        return shellString
-
-    def _generate_shell(self) -> str:
-        shellString = self._base_shell_command()
-        if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
-            shellString += " -i {wildcards.i}"
-        shellString += " " + self._clean_string(self._analysisTask.dataSet.dataSetName)
-        return self._add_quotes(shellString)
-
-    def _generate_done_shell(self) -> str:
-        """Check done shell command for parallel analysis tasks"""
-        shellString = self._base_shell_command()
-        shellString += " --check-done"
-        shellString += " " + self._clean_string(self._analysisTask.dataSet.dataSetName)
-        return self._add_quotes(shellString)
-
-    def as_string(self) -> str:
-        fullString = ("rule %s:\n\tinput: %s\n\toutput: %s\n\tmessage: %s\n\t" + "shell: %s\n\n") % (
-            self._analysisTask.get_analysis_name(),
-            self._generate_current_task_inputs(),
-            self._generate_output(),
-            self._generate_message(),
-            self._generate_shell(),
-        )
-        # for parallel tasks, add a second snakemake task to reduce the time
-        # it takes to generate DAGs
-        if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
-            fullString += ("rule %s:\n\tinput: %s\n\toutput: %s\n\tmessage: %s\n\t" + "shell: %s\n\n") % (
-                self._analysisTask.get_analysis_name() + "Done",
-                self._clean_string(self._expand_as_string(self._analysisTask, self._analysisTask.fragment_list())),
-                self._add_quotes(
-                    self._clean_string(self._analysisTask.dataSet.analysis_done_filename(self._analysisTask))
-                ),
-                self._add_quotes("Checking %s done" % self._analysisTask.analysisName),
-                self._generate_done_shell(),
-            )
-        return fullString
-
-    def full_output(self) -> str:
-        if isinstance(self._analysisTask, analysistask.ParallelAnalysisTask):
-            return self._clean_string(
-                self._expand_as_string(self._analysisTask.get_analysis_name(), self._analysisTask.fragment_list())
-            )
-        else:
-            return self._clean_string(
-                self._add_quotes(self._analysisTask.dataSet.analysis_done_filename(self._analysisTask))
-            )
+def expand_as_string(task: analysistask.ParallelAnalysisTask) -> str:
+    """Generate the expand function for the output of a parallel analysis task."""
+    filename = task.dataSet.analysis_done_filename(task.get_analysis_name(), "{g}")
+    return f"expand('{filename}', g={list(task.fragment_list())})"
 
 
-class SnakefileGenerator(object):
-    def __init__(self, analysisParameters, dataSet: dataset.DataSet, pythonPath: str = None):
-        self._analysisParameters = analysisParameters
-        self._dataSet = dataSet
-        self._pythonPath = pythonPath
+def generate_output(
+    task: analysistask.AnalysisTask, reftask: analysistask.AnalysisTask = None, *, full_output: bool = False
+) -> str:
+    """Generate the output string for a task.
 
-    def _parse_parameters(self):
-        analysisTasks = {}
-        for tDict in self._analysisParameters["analysis_tasks"]:
-            analysisModule = importlib.import_module(tDict["module"])
-            analysisClass = getattr(analysisModule, tDict["task"])
-            analysisParameters = tDict.get("parameters")
-            analysisName = tDict.get("analysis_name")
-            newTask = analysisClass(self._dataSet, analysisParameters, analysisName)
-            if newTask.get_analysis_name() in analysisTasks:
+    If `reftask` is given, then the output string is constructed to be used for the
+    input of `reftask`. If both `task` and `refTask` are parallel tasks with the same
+    fragment list, then only the output for a single fragment is needed for the input.
+    If `task` is a parellel task but `reftask` is not parallel, or parallel with a
+    different fragment list (e.g. Optimize), then the output of all fragments for `task`
+    are required for input to `reftask` and the expand string is returned.
+    """
+    if isinstance(task, analysistask.ParallelAnalysisTask):
+        if full_output:
+            return expand_as_string(task)
+        depends_all = False
+        if reftask:
+            if isinstance(reftask, analysistask.ParallelAnalysisTask):
+                if set(task.fragment_list()) != set(reftask.fragment_list()):
+                    depends_all = True
+            else:
+                depends_all = True
+        if not depends_all:
+            return f"'{task.dataSet.analysis_done_filename(task, '{i}')}'"
+        return expand_as_string(task)
+    return f"'{task.dataSet.analysis_done_filename(task)}'"
+
+
+def generate_input(task: analysistask.AnalysisTask) -> str:
+    """Generate the input string for a task."""
+    input_tasks = [task.dataSet.load_analysis_task(x) for x in task.get_dependencies()]
+    return ",".join([generate_output(x, task) for x in input_tasks]) if len(input_tasks) > 0 else ""
+
+
+def generate_message(task: analysistask.AnalysisTask) -> str:
+    """Generate the message string for a task."""
+    message = f"Running {task.get_analysis_name()}"
+    if isinstance(task, analysistask.ParallelAnalysisTask):
+        message += " {wildcards.i}"
+    return message
+
+
+def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) -> str:
+    """Generate the shell command for a task."""
+    args = [
+        python_path,
+        "-m merlin",
+        f"-t {task.analysisName}",
+        f"-e {task.dataSet.dataHome}",
+        f"-s {task.dataSet.analysisHome}",
+    ]
+    if task.dataSet.profile:
+        args.append("--profile")
+    if isinstance(task, analysistask.ParallelAnalysisTask):
+        args.append("-i {wildcards.i}")
+    args.append(task.dataSet.dataSetName)
+    return " ".join(args)
+
+
+def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python") -> str:
+    """Generate the snakemake rule for a task."""
+    string = f"""
+    rule {task.get_analysis_name()}:
+        input: {generate_input(task)}
+        output: {generate_output(task)}
+        message: "{generate_message(task)}"
+        shell: "{generate_shell_command(task, python_path)}"
+    """
+    return textwrap.dedent(string).strip()
+
+
+class SnakefileGenerator:
+    def __init__(self, parameters, dataset: dataset.DataSet, python_path: str = None):
+        self.parameters = parameters
+        self.dataset = dataset
+        self.python_path = python_path
+
+    def parse_parameters(self) -> dict[str: analysistask.AnalysisTask]:
+        """Create a dict of analysis tasks from the parameters."""
+        tasks = {}
+        for task_dict in self.parameters["analysis_tasks"]:
+            module = importlib.import_module(task_dict["module"])
+            analysis_class = getattr(module, task_dict["task"])
+            parameters = task_dict.get("parameters")
+            name = task_dict.get("analysis_name")
+            task = analysis_class(self.dataset, parameters, name)
+            if task.get_analysis_name() in tasks:
                 raise Exception(
-                    "Analysis tasks must have unique names. " + newTask.get_analysis_name() + " is redundant."
+                    "Analysis tasks must have unique names. " + task.get_analysis_name() + " is redundant."
                 )
             # TODO This should be more careful to not overwrite an existing
             # analysis task that has already been run.
-            newTask.save()
-            analysisTasks[newTask.get_analysis_name()] = newTask
-        return analysisTasks
+            task.save()
+            tasks[task.get_analysis_name()] = task
+        return tasks
 
-    def _identify_terminal_tasks(self, analysisTasks):
-        taskGraph = networkx.DiGraph()
-        for x in analysisTasks.keys():
-            taskGraph.add_node(x)
+    def identify_terminal_tasks(self, tasks: dict[str: analysistask.AnalysisTask]) -> list[str]:
+        """Find the terminal tasks."""
+        graph = networkx.DiGraph()
+        for x in tasks:
+            graph.add_node(x)
 
-        for x, a in analysisTasks.items():
+        for x, a in tasks.items():
             for d in a.get_dependencies():
-                taskGraph.add_edge(d, x)
+                graph.add_edge(d, x)
 
-        return [k for k, v in taskGraph.out_degree if v == 0]
+        return [k for k, v in graph.out_degree if v == 0]
 
     def generate_workflow(self) -> str:
-        """Generate a snakemake workflow for the analysis parameters
-        of this SnakemakeGenerator and save the workflow into the dataset.
+        """Generate a snakemake workflow for the analysis parameters.
 
-        Returns:
+        Returns
             the path to the generated snakemake workflow
         """
-        analysisTasks = self._parse_parameters()
-        terminalTasks = self._identify_terminal_tasks(analysisTasks)
+        tasks = self.parse_parameters()
+        terminal_tasks = self.identify_terminal_tasks(tasks)
+        terminal_input = ",".join([generate_output(tasks[x], full_output=True) for x in terminal_tasks])
+        terminal_rule = f"""
+        rule all:
+            input: {terminal_input}
+        """.strip()
+        task_rules = [snakemake_rule(x, self.python_path) for x in tasks.values()]
+        snakemake_string = "\n\n".join([textwrap.dedent(terminal_rule).strip()] + task_rules)
 
-        ruleList = {k: SnakemakeRule(v, self._pythonPath) for k, v in analysisTasks.items()}
-
-        workflowString = (
-            "rule all: \n\tinput: " + ",".join([ruleList[x].full_output() for x in terminalTasks]) + "\n\n"
-        )
-        workflowString += "\n".join([x.as_string() for x in ruleList.values()])
-
-        return self._dataSet.save_workflow(workflowString)
+        return self.dataset.save_workflow(snakemake_string)
