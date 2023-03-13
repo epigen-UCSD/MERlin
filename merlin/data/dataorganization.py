@@ -294,6 +294,7 @@ class DataOrganization(object):
             self.fileMap = self._dataSet.load_dataframe_from_csv("filemap", dtype={"fov": str})
 
         except FileNotFoundError:
+            print("Mapping image files from data organization")
             uniqueEntries = self.data.drop_duplicates(subset=["imageType", "imageRegExp"], keep="first")
 
             uniqueTypes = uniqueEntries["imageType"]
