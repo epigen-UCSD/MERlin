@@ -57,16 +57,17 @@ class CellposeBoundaryPlot(AbstractPlot):
             z_positions = self.dataset.get_z_positions()
             z_index = z_positions[len(z_positions) // 2]
             image = self.dataset.get_raw_image(channel, fov, z_index)
+            mask = mask[int(z_index)]
 
         ax.imshow(image, cmap="gray")
         ax.contour(
-            mask[int(z_index)],
-            [x + 0.5 for x in np.unique(mask[int(z_index)])],
+            mask,
+            [x + 0.5 for x in np.unique(mask)],
             colors="tab:blue",
             linewidths=1,
             zorder=2,
         )
-        ax.contourf(mask[int(z_index)], [x + 0.5 for x in np.unique(mask[int(z_index)])], colors="tab:blue", alpha=0.2)
+        ax.contourf(mask, [x + 0.5 for x in np.unique(mask)], colors="tab:blue", alpha=0.2)
         ax.axis("off")
 
     def create_plot(self, **kwargs) -> plt.Figure:
