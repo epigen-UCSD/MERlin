@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+from functools import cached_property
 
 from merlin.core import analysistask
 from merlin.util import deconvolve
@@ -157,3 +158,32 @@ class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
             filteredImage, deconFilterSize, self._deconSigma, self._deconIterations
         ).astype(np.uint16)
         return deconvolvedImage
+
+
+class FlatFieldPreprocess(analysistask.AnalysisTask):
+    def __init__(self, dataSet, parameters=None, analysisName=None):
+        super().__init__(dataSet, parameters, analysisName)
+
+    def get_estimated_memory(self):
+        return 2048
+
+    def get_estimated_time(self):
+        return 5
+
+    def get_dependencies(self):
+        return []
+
+    @cached_property
+    def mean_image(self):
+        return self.dataSet.load_numpy_analysis_result(f"mean_image_{self.parameters['channel']}", self)
+
+    def process_image(self, image):
+        return image / self.mean_image
+
+    def _run_analysis(self) -> None:
+        sum_image = np.zeros(self.dataSet.get_image_dimensions(), dtype=np.uint32)
+        for fov in self.dataSet.get_fovs():
+            sum_image += self.dataSet.get_raw_image(
+                self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"]), fov, 10
+            )  # TODO: remove hard-coded zindex
+        self.dataSet.save_numpy_analysis_result(sum_image, f"mean_image_{self.parameters['channel']}", self)
