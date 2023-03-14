@@ -292,8 +292,13 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             self.parameters["downscale_xy"] = 1
         if "downscale_z" not in self.parameters:
             self.parameters["downscale_z"] = 1
+        if "flat_field_task" not in self.parameters:
+            self.parameters["flat_field_task"] = None
 
         self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
+        if self.parameters["flat_field_task"]:
+            self.flat_field_task = self.dataSet.load_analysis_task(self.parameters["flat_field_task"])
+        self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
 
     def get_estimated_memory(self):
         return 2048
@@ -302,7 +307,10 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         return 5
 
     def get_dependencies(self):
-        return [self.parameters["global_align_task"]]
+        dependencies = [self.parameters["global_align_task"]]
+        if self.parameters["flat_field_task"]:
+            dependencies.append(self.parameters["flat_field_task"])
+        return dependencies
 
     def load_mask(self, fragmentName):
         mask = self.dataSet.load_numpy_analysis_result(
@@ -331,21 +339,20 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             "metadata", self.get_analysis_name(), fragmentName, subdirectory="metadata"
         )
 
+    def load_image(self, fov, zIndex):
+        image = self.dataSet.get_raw_image(self.channelIndex, fov, zIndex)
+        if self.parameters["flat_field_task"]:
+            image = self.flat_field_task.process_image(image)
+        return image[:: self.parameters["downscale_xy"], :: self.parameters["downscale_xy"]]
+
     def _run_analysis(self, fragmentIndex):
-        channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
-        downscale = self.parameters["downscale_xy"]
         if self.parameters["z_pos"] is not None:
             zIndex = self.dataSet.position_to_z_index(self.parameters["z_pos"])
-            inputImage = self.dataSet.get_raw_image(channelIndex, fragmentIndex, zIndex)[::downscale, ::downscale]
+            inputImage = self.load_image(fragmentIndex, zIndex)
         else:
             zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
             inputImage = np.array(
-                [
-                    self.dataSet.get_raw_image(channelIndex, fragmentIndex, self.dataSet.position_to_z_index(zIndex))[
-                        ::downscale, ::downscale
-                    ]
-                    for zIndex in zPositions
-                ]
+                [self.load_image(fragmentIndex, self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions]
             )
         model = cpmodels.Cellpose(gpu=False, model_type="cyto2")
         if inputImage.ndim == 2:
@@ -373,6 +380,7 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             columns.append("z")
         columns.extend(["x", "y"])
         metadata.columns = columns
+        downscale = self.parameters["downscale_xy"]
         metadata["x"] *= downscale
         metadata["y"] *= downscale
         if mask.ndim == 3:
