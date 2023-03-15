@@ -38,7 +38,7 @@ class DataOrganization(object):
     image files.
     """
 
-    def __init__(self, dataSet, filePath: str = None, fovList: str = None):
+    def __init__(self, dataSet, filePath: str = None, fovList: str = None, skip: list = None):
         """
         Create a new DataOrganization for the data in the specified data set.
 
@@ -80,6 +80,7 @@ class DataOrganization(object):
         if fovList:
             with open(fovList) as f:
                 self.fovList = [fov.strip() for fov in f.readlines()]
+        self.skip = skip
         self._map_image_files()
 
     def get_data_channels(self) -> np.array:
@@ -333,6 +334,9 @@ class DataOrganization(object):
 
             if self.fovList:
                 self.fileMap = self.fileMap[self.fileMap["fov"].isin(self.fovList)]
+
+            if self.skip:
+                self.fileMap = self.fileMap[~self.fileMap["fov"].isin(self.skip)]
 
             self._validate_file_map()
 
