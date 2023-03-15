@@ -32,3 +32,4 @@ docutils
 zarr
 scanpy
 leidenalg
+cellpose
