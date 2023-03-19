@@ -1,12 +1,11 @@
-from typing import List
-from typing import Union
-import numpy as np
-from skimage import transform
-from skimage import registration
+from typing import List, Tuple, Union
+
 import cv2
-from sklearn.neighbors import NearestNeighbors
-from scipy.signal import fftconvolve
+import numpy as np
 from scipy import ndimage
+from scipy.signal import fftconvolve
+from skimage import registration, transform
+from sklearn.neighbors import NearestNeighbors
 
 from merlin.core import analysistask
 from merlin.util import aberration
@@ -407,20 +406,20 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
             chromaticCorrector: the ChromaticCorrector to use to chromatically
                 correct the images. If not supplied, no correction is
                 performed.
-        Returns:
+
+        Returns
             a 4-dimensional numpy array containing the aligned images. The
                 images are arranged as [channel, zIndex, x, y]
+
         """
-        dataChannels = self.dataSet.get_data_organization().get_data_channels()
-        zIndexes = range(len(self.dataSet.get_z_positions()))
-        return np.array(
-            [[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in zIndexes] for d in dataChannels]
-        )
+        channels = self.dataSet.get_data_organization().get_data_channels()
+        z_indexes = range(len(self.dataSet.get_z_positions()))
+        return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
 
     def get_aligned_image(
-        self, fov: str, dataChannel: int, zIndex: int, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, fov: str, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        """Get the specified transformed image
+        """Get the specified transformed image.
 
         Args:
             fov: index of the field of view
@@ -429,76 +428,67 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
             chromaticCorrector: the ChromaticCorrector to use to chromatically
                 correct the images. If not supplied, no correction is
                 performed.
-        Returns:
+
+        Returns
             a 2-dimensional numpy array containing the specified image
         """
         try:
-            zdrift, xdrift, ydrift = self.get_transformation(fov, dataChannel)
+            zdrift, xdrift, ydrift = self.get_transformation(fov, channel)
         except ValueError:  # Drift correction was not 3D
             zdrift = 0
-            xdrift, ydrift = self.get_transformation(fov, dataChannel)
+            xdrift, ydrift = self.get_transformation(fov, channel)
         try:
             input_image = self.dataSet.get_raw_image(
-                dataChannel,
+                channel,
                 fov,
-                self.dataSet.z_index_to_position(zIndex - zdrift),
+                self.dataSet.z_index_to_position(z_index - zdrift),
             )
-            if chromaticCorrector is not None:
-                image_color = self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
-                input_image = chromaticCorrector.transform_image(input_image, image_color).astype(input_image.dtype)
+            if chromatic_corrector is not None:
+                image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+                input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
         except IndexError:  # Z drift outside bounds
-            input_image = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(0))
+            input_image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(0))
             return np.zeros_like(input_image)
         else:
             return ndimage.shift(input_image, [-xdrift, -ydrift], order=0)
 
-    def get_transformation(self, fragmentName: str, dataChannel: int = None):
-        """Get the transformations for aligning images for the specified field
-        of view.
-        """
+    def get_transformation(self, fov: str, channel: int = None) -> np.ndarray:
+        """Get the transformations for aligning images for the specified field of view."""
         drifts = self.dataSet.load_numpy_analysis_result(
-            "drifts", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="drifts"
+            "drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
         )
-        if dataChannel is None:
+        if channel is None:
             return drifts
-        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel) - 1]
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - 1]
 
-    def get_tiles(self, img, size=256):
-        tiles = np.ceil(np.array(img.shape) / size)
-        res = [img]
+    def get_tiles(self, image: np.ndarray, size: int = 256) -> list[np.ndarray]:
+        """Split the image into tiles and return them as a list."""
+        tiles = np.ceil(np.array(image.shape) / size)
+        res = [image]
         for axis, n in enumerate(tiles):
             res = sum((np.array_split(im, n, axis) for im in res), [])
         return res
 
-    def norm_slice(self, im, s):
-        im_ = im.astype(np.float32)
-        if im_.ndim == 3:
-            return np.array([im__ - cv2.blur(im__, (s, s)) for im__ in im_], dtype=np.float32)
-        return im_ - cv2.blur(im_, (s, s))
+    def norm_slice(self, image: np.ndarray, sigma: int) -> np.ndarray:
+        """Perform a high-pass filter on the image."""
+        if image.ndim == 3:
+            return np.array([zslice - cv2.blur(zslice, (sigma, sigma)) for zslice in image])
+        return image - cv2.blur(image, (sigma, sigma))
 
-    def get_txyz(self, im_dapi0, im_dapi1):
-        im_dapi0 = np.array(im_dapi0, dtype=np.float32)
-        im_dapi1 = np.array(im_dapi1, dtype=np.float32)
-        im_dapi0_ = self.norm_slice(im_dapi0, self.parameters["sz_norm"])
-        im_dapi1_ = self.norm_slice(im_dapi1, self.parameters["sz_norm"])
-        tiles0 = self.get_tiles(im_dapi0_, size=self.parameters["sz"])
-        tiles1 = self.get_tiles(im_dapi1_, size=self.parameters["sz"])
-        best = np.argsort([np.std(tile) for tile in tiles0])[::-1]
+    def get_txyz(self, moving_image: np.ndarray) -> Tuple[np.ndarray, list[np.ndarray]]:
+        moving_image = self.norm_slice(moving_image.astype(np.float32), self.parameters["sz_norm"])
+        moving_tiles = self.get_tiles(moving_image, size=self.parameters["sz"])
         txyzs = []
-        im_cors = []
-        for ib in range(min(self.parameters["nelems"], len(best))):
-            im0 = tiles0[ib].copy()
-            im1 = tiles1[ib].copy()
-            im0 -= np.mean(im0)
-            im1 -= np.mean(im1)
-            im0 /= np.std(im0)
-            im1 /= np.std(im1)
+        for ib in self.tiles_to_align:
+            im0 = self.fixed_tiles[ib]
+            im1 = moving_tiles[ib]
+            im0 = (im0 - np.mean(im0)) / np.std(im0)
+            im1 = (im1 - np.mean(im1)) / np.std(im1)
             if im0.ndim == 3:
                 im_cor = fftconvolve(im0[::-1, ::-1, ::-1], im1, mode="full")
             else:
                 im_cor = fftconvolve(im0[::-1, ::-1], im1, mode="full")
             txyz = np.unravel_index(np.argmax(im_cor), im_cor.shape) - np.array(im0.shape) + 1
-            im_cors.append(im_cor)
             txyzs.append(txyz)
         txyz = np.median(txyzs, 0).astype(int)
         return txyz, txyzs
@@ -510,24 +500,20 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
         It will return median value and a list of single values.
         """
         fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fov)
+        fixed_image = self.norm_slice(fixed_image.astype(np.float32), self.parameters["sz_norm"])
+        self.fixed_tiles = self.get_tiles(fixed_image, size=self.parameters["sz"])
+        best = np.argsort([np.std(tile) for tile in self.fixed_tiles])[::-1]
+        self.tiles_to_align = best[:min(self.parameters["nelems"], len(best))]
         drifts = []
         tile_drifts = []
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             moving_image = self.dataSet.get_fiducial_image(channel, fov)
-            txyz, txyzs = self.get_txyz(fixed_image, moving_image)
+            txyz, txyzs = self.get_txyz(moving_image)
             drifts.append(txyz)
             tile_drifts.append(txyzs)
         self.dataSet.save_numpy_analysis_result(
-            np.array(drifts),
-            "drifts",
-            self.get_analysis_name(),
-            resultIndex=fov,
-            subdirectory="drifts",
+            np.array(drifts), "drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
         )
         self.dataSet.save_numpy_analysis_result(
-            np.array(tile_drifts),
-            "tile_drifts",
-            self.get_analysis_name(),
-            resultIndex=fov,
-            subdirectory="drifts",
+            np.array(tile_drifts), "tile_drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
         )
