@@ -543,7 +543,10 @@ class SpotDecode(analysistask.ParallelAnalysisTask):
         align_task = self.dataSet.load_analysis_task(self.parameters["warp_task"])
         for bit in np.unique(fits[:, -1]):
             drifts = align_task.get_transformation(fov, int(bit))
-            fits[fits[:, -1] == bit, :3] -= drifts
+            if len(drifts) == 3:
+                fits[fits[:, -1] == bit, :3] -= drifts
+            else:
+                fits[fits[:, -1] == bit, 1:3] -= drifts
         inters = self.get_inters(fits)
         XH_pruned, icodesN, gns_names = self.get_icodes(inters, fits)
         savePath = self.dataSet._analysis_result_save_path(
