@@ -39,17 +39,21 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         if "fov_index" in self.parameters:
             logger = self.dataSet.get_logger(self)
             logger.info("Setting fov_per_iteration to length of fov_index")
-
             self.parameters["fov_per_iteration"] = len(self.parameters["fov_index"])
-
         else:
             path = self.dataSet._analysis_result_save_path("", self.analysisName)
             files = pathlib.Path(path).glob("select_frame_*")
             self.parameters["fov_index"] = [file.stem.split("select_frame_")[-1] for file in files]
-            for i in range(len(self.parameters["fov_index"]), self.parameters["fov_per_iteration"]):
-                fovIndex = np.random.choice(list(self.dataSet.get_fovs()))
-                zIndex = int(np.random.choice(list(range(len(self.dataSet.get_z_positions())))))
-                self.parameters["fov_index"].append(f"{fovIndex}__{zIndex}")
+            if len(self.parameters["fov_index"]) < self.parameters["fov_per_iteration"]:
+                zIndices = list(range(len(self.dataSet.get_z_positions())))
+                combinations = set(itertools.product(self.dataSet.get_fovs(), zIndices))
+                combinations -= {tuple(zslice.split("__")) for zslice in self.parameters["fov_index"]}
+                for zslice in np.random.choice(
+                    [f"{fovIndex}__{zIndex}" for fovIndex, zIndex in combinations],
+                    size=self.parameters["fov_per_iteration"] - len(self.parameters["fov_index"]),
+                    replace=False,
+                ):
+                    self.parameters["fov_index"].append(zslice)
 
     def get_estimated_memory(self):
         return 4000
@@ -221,7 +225,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             return self.dataSet.load_pickle_analysis_result("chromatic_corrections", self.analysisName)
         # OSError and ValueError are raised if the previous file is not
         # completely written
-        except (FileNotFoundError, OSError, ValueError):
+        except (FileNotFoundError, OSError, ValueError, EOFError):
             # TODO - this is messy. It can be broken into smaller subunits and
             # most parts could be included in a chromatic aberration class
             previousTransformations = self._get_previous_chromatic_transformations()
@@ -319,7 +323,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             return self.dataSet.load_numpy_analysis_result("scale_factors", self.analysisName)
         # OSError and ValueError are raised if the previous file is not
         # completely written
-        except (FileNotFoundError, OSError, ValueError):
+        except (FileNotFoundError, OSError, ValueError, EOFError):
             refactors = np.array(
                 [
                     self.dataSet.load_numpy_analysis_result("scale_refactors", self.analysisName, resultIndex=i)
@@ -351,7 +355,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             return self.dataSet.load_numpy_analysis_result("backgrounds", self.analysisName)
         # OSError and ValueError are raised if the previous file is not
         # completely written
-        except (FileNotFoundError, OSError, ValueError):
+        except (FileNotFoundError, OSError, ValueError, EOFError):
             refactors = np.array(
                 [
                     self.dataSet.load_numpy_analysis_result("background_refactors", self.analysisName, resultIndex=i)
