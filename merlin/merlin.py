@@ -98,7 +98,8 @@ def run_merlin() -> None:
         dataHome=clean_string_arg(args.data_home),
         analysisHome=clean_string_arg(args.analysis_home),
         fovList=clean_string_arg(args.fovs),
-        profile=args.profile
+        profile=args.profile,
+        skip=args.skip
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME
