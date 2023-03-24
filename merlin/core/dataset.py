@@ -42,7 +42,7 @@ class DataFormatException(Exception):
 
 
 class DataSet(object):
-    def __init__(self, dataDirectoryName: str, dataHome: str = None, analysisHome: str = None):
+    def __init__(self, dataDirectoryName: Path, dataHome: Path | None = None, analysisHome: Path | None = None):
         """Create a dataset for the specified raw data.
 
         Args:
@@ -65,16 +65,16 @@ class DataSet(object):
         self.dataHome = dataHome
         self.analysisHome = analysisHome
 
-        self.rawDataPath = os.sep.join([str(dataHome), dataDirectoryName])
+        self.rawDataPath = dataHome / dataDirectoryName
         self.rawDataPortal = dataportal.DataPortal.create_portal(self.rawDataPath)
         if not self.rawDataPortal.is_available():
             print("The raw data is not available at %s".format(self.rawDataPath))
 
-        self.analysisPath = os.sep.join([str(analysisHome), dataDirectoryName])
-        os.makedirs(self.analysisPath, exist_ok=True)
+        self.analysisPath = analysisHome / dataDirectoryName
+        self.analysisPath.mkdir(parents=True, exist_ok=True)
 
-        self.logPath = os.sep.join([self.analysisPath, "logs"])
-        os.makedirs(self.logPath, exist_ok=True)
+        self.logPath = self.analysisPath / "logs"
+        self.logPath.mkdir(parents=True, exist_ok=True)
 
         self._store_dataset_metadata()
 
@@ -100,7 +100,7 @@ class DataSet(object):
             }
             self.save_json_analysis_result(newMetadata, "dataset", None)
 
-    def save_workflow(self, workflowString: str) -> str:
+    def save_workflow(self, workflowString: str) -> Path:
         """Save a snakemake workflow for analysis of this dataset.
 
         Args:
@@ -110,20 +110,20 @@ class DataSet(object):
         Returns: the path to the saved workflow
         """
         snakemakePath = self.get_snakemake_path()
-        os.makedirs(snakemakePath, exist_ok=True)
+        snakemakePath.mkdir(parents=True, exist_ok=True)
 
-        workflowPath = os.sep.join([snakemakePath, datetime.datetime.now().strftime("%y%m%d_%H%M%S")]) + ".Snakefile"
-        with open(workflowPath, "w") as outFile:
+        workflowPath = snakemakePath / (datetime.datetime.now().strftime("%y%m%d_%H%M%S") + ".Snakefile")
+        with workflowPath.open("w") as outFile:
             outFile.write(workflowString)
 
         return workflowPath
 
-    def get_snakemake_path(self) -> str:
+    def get_snakemake_path(self) -> Path:
         """Get the directory for storing files related to snakemake.
 
         Returns: the snakemake path as a string
         """
-        return os.sep.join([self.analysisPath, "snakemake"])
+        return self.analysisPath / "snakemake"
 
     def save_figure(
         self,
@@ -146,12 +146,12 @@ class DataSet(object):
                     analysis task to save the figures.
             formats: formats to save figure as.
         """
-        savePath = os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), figureName])
+        savePath = self.get_analysis_subdirectory(analysisTask, subdirectory) / figureName
 
         if ".png" in formats:
-            figure.savefig(savePath + ".png", pad_inches=0)
+            figure.savefig(savePath.with_suffix(".png"), pad_inches=0)
         if ".pdf" in formats:
-            figure.savefig(savePath + ".pdf", transparent=True, pad_inches=0)
+            figure.savefig(savePath.with_suffix(".pdf"), transparent=True, pad_inches=0)
 
     def figure_exists(self, analysisTask: TaskOrName, figureName: str, subdirectory: str = "figures") -> bool:
         """Determine if a figure with the specified name has been
@@ -166,9 +166,8 @@ class DataSet(object):
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
         """
-        savePath = os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), figureName]) + ".png"
-
-        return os.path.exists(savePath)
+        savePath = self.get_analysis_subdirectory(analysisTask, subdirectory) / (figureName + ".png")
+        return savePath.exists()
 
     def get_analysis_image_set(
         self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int = None
@@ -242,9 +241,9 @@ class DataSet(object):
     def _analysis_image_name(self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int) -> str:
         destPath = self.get_analysis_subdirectory(analysisTask, subdirectory="images")
         if imageIndex is None:
-            return os.sep.join([destPath, imageBaseName + ".tif"])
+            return destPath / imageBaseName + ".tif"
         else:
-            return os.sep.join([destPath, imageBaseName + str(imageIndex) + ".tif"])
+            return destPath / imageBaseName + str(imageIndex) + ".tif"
 
     def _analysis_result_save_path(
         self,
@@ -262,9 +261,9 @@ class DataSet(object):
             saveName += fileExtension
 
         if analysisTask is None:
-            return os.sep.join([self.analysisPath, saveName])
+            return self.analysisPath / saveName
         else:
-            return os.sep.join([self.get_analysis_subdirectory(analysisTask, subdirectory), saveName])
+            return self.get_analysis_subdirectory(analysisTask, subdirectory) / saveName
 
     def list_analysis_files(
         self, analysisTask: TaskOrName = None, subdirectory: str = None, extension: str = None, fullPath: bool = True
@@ -351,7 +350,7 @@ class DataSet(object):
         """
         savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".csv")
 
-        with open(savePath, "w") as f:
+        with savePath.open("w") as f:
             dataframe.to_csv(f, **kwargs)
 
     def load_dataframe_from_csv(
@@ -361,7 +360,7 @@ class DataSet(object):
         resultIndex: int = None,
         subdirectory: str = None,
         **kwargs,
-    ) -> Union[pandas.DataFrame, None]:
+    ) -> pandas.DataFrame:
         """Load a pandas data frame from a csv file stored in this data set.
 
         Args:
@@ -376,7 +375,7 @@ class DataSet(object):
               FileNotFoundError: if the file does not exist
         """
         savePath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".csv")
-        with open(savePath, "r") as f:
+        with savePath.open() as f:
             return pandas.read_csv(f, **kwargs)
 
     def open_pandas_hdfstore(
@@ -415,9 +414,7 @@ class DataSet(object):
                 saved to the root directory for the analysis task.
         """
         hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".h5")
-
-        if os.path.exists(hPath):
-            os.remove(hPath)
+        hPath.unlink(missing_ok=True)
 
     def open_hdf5_file(
         self,
@@ -448,7 +445,7 @@ class DataSet(object):
                 does not exist
         """
         hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".hdf5")
-        if mode == "r" and not os.path.exists(hPath):
+        if mode == "r" and not hPath.exists():
             raise FileNotFoundError(("Unable to open %s for reading since " + "it does not exist.") % hPath)
 
         return h5py.File(hPath, mode)
@@ -470,8 +467,7 @@ class DataSet(object):
                 saved to the root directory for the analysis task.
         """
         hPath = self._analysis_result_save_path(resultName, analysisTask, resultIndex, subdirectory, ".hdf5")
-        if os.path.exists(hPath):
-            os.remove(hPath)
+        hPath.unlink(missing_ok=True)
 
     def save_json_analysis_result(
         self,
@@ -482,28 +478,28 @@ class DataSet(object):
         subdirectory: str = None,
     ) -> None:
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".json")
-        with open(savePath, "w") as f:
+        with savePath.open("w") as f:
             json.dump(analysisResult, f)
 
     def load_json_analysis_result(
         self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
     ) -> Dict:
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".json")
-        with open(savePath, "r") as f:
+        with savePath.open() as f:
             return json.load(f)
 
     def load_pickle_analysis_result(
         self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
     ) -> Dict:
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".pkl")
-        with open(savePath, "rb") as f:
+        with savePath.open("rb") as f:
             return pickle.load(f)
 
     def save_pickle_analysis_result(
         self, analysisResult, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
     ):
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".pkl")
-        with open(savePath, "wb") as f:
+        with savePath.open("wb") as f:
             pickle.dump(analysisResult, f)
 
     def load_scanpy_analysis_result(
@@ -526,7 +522,6 @@ class DataSet(object):
         resultIndex: int = None,
         subdirectory: str = None,
     ) -> None:
-
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory)
         np.save(savePath, analysisResult)
 
@@ -538,14 +533,12 @@ class DataSet(object):
         resultIndex: int = None,
         subdirectory: str = None,
     ) -> None:
-
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory)
         np.savetxt(savePath + ".csv", analysisResult)
 
     def load_numpy_analysis_result(
         self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
     ) -> np.array:
-
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory, ".npy")
         return np.load(savePath, allow_pickle=True)
 
@@ -573,7 +566,7 @@ class DataSet(object):
 
     def get_analysis_subdirectory(
         self, analysisTask: TaskOrName, subdirectory: str = None, create: bool = True
-    ) -> str:
+    ) -> Path:
         """
         analysisTask can either be the class or a string containing the
         class name.
@@ -587,12 +580,12 @@ class DataSet(object):
             analysisName = analysisTask
 
         if subdirectory is None:
-            subdirectoryPath = os.sep.join([self.analysisPath, analysisName])
+            subdirectoryPath = self.analysisPath / analysisName
         else:
-            subdirectoryPath = os.sep.join([self.analysisPath, analysisName, str(subdirectory)])
+            subdirectoryPath = self.analysisPath / analysisName / str(subdirectory)
 
         if create:
-            os.makedirs(subdirectoryPath, exist_ok=True)
+            subdirectoryPath.mkdir(parents=True, exist_ok=True)
 
         return subdirectoryPath
 
@@ -603,7 +596,7 @@ class DataSet(object):
         return self.get_analysis_subdirectory(analysisTask, subdirectory="log")
 
     def save_analysis_task(self, analysisTask: analysistask.AnalysisTask, overwrite: bool = False):
-        saveName = os.sep.join([self.get_task_subdirectory(analysisTask), "task.json"])
+        saveName = self.get_task_subdirectory(analysisTask) / "task.json"
 
         try:
             existingTask = self.load_analysis_task(analysisTask.get_analysis_name())
@@ -638,14 +631,14 @@ class DataSet(object):
         except FileNotFoundError:
             pass
 
-        with open(saveName, "w") as outFile:
+        with saveName.open("w") as outFile:
             json.dump(analysisTask.get_parameters(), outFile, indent=4)
 
     def load_analysis_task(self, analysisTaskName: str) -> analysistask.AnalysisTask:
-        loadName = os.sep.join([self.get_task_subdirectory(analysisTaskName), "task.json"])
+        loadName = self.get_task_subdirectory(analysisTaskName) / "task.json"
 
-        with open(loadName, "r") as inFile:
-            parameters = json.load(inFile)
+        with loadName.open() as inFile:
+            parameters: dict[str, str] = json.load(inFile)
             analysisModule = importlib.import_module(parameters["module"])
             analysisTask = getattr(analysisModule, parameters["class"])
             return analysisTask(self, parameters, analysisTaskName)
@@ -669,10 +662,8 @@ class DataSet(object):
         """
         analysisList = []
         for a in os.listdir(self.analysisPath):
-            if os.path.isdir(os.path.join(self.analysisPath, a)):
-                if os.path.exists(os.path.join(self.analysisPath, a, "tasks")):
-                    analysisList.append(a)
-
+            if Path(self.analysisPath, a).is_dir() and Path(self.analysisPath, a, "tasks").exists():
+                analysisList.append(a)
         analysisList.sort()
         return analysisList
 
@@ -682,7 +673,7 @@ class DataSet(object):
         dataset.
         """
         analysisPath = self.get_analysis_subdirectory(analysisTaskName, create=False)
-        return os.path.exists(analysisPath)
+        return analysisPath.exists()
 
     def get_logger(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> logging.Logger:
         loggerName = analysisTask.get_analysis_name()
@@ -719,11 +710,11 @@ class DataSet(object):
             logName += "_" + str(fragmentIndex)
         logName += ".log"
 
-        return os.sep.join([self.get_log_subdirectory(analysisTask), logName])
+        return self.get_log_subdirectory(analysisTask) / logName
 
     def _analysis_status_file(
         self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentName: str = None
-    ) -> str:
+    ) -> Path:
         if isinstance(analysisTask, str):
             analysisTask = self.load_analysis_task(analysisTask)
 
@@ -731,7 +722,7 @@ class DataSet(object):
             fileName = analysisTask.get_analysis_name() + "." + eventName
         else:
             fileName = analysisTask.get_analysis_name() + "_" + str(fragmentName) + "." + eventName
-        return os.sep.join([self.get_task_subdirectory(analysisTask), fileName])
+        return self.get_task_subdirectory(analysisTask) / fileName
 
     def get_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentName: str = None) -> None:
         """Get the environment variables for the system used to run the
@@ -750,13 +741,13 @@ class DataSet(object):
             return None
 
         fileName = self._analysis_status_file(analysisTask, "environment", fragmentName)
-        with open(fileName, "r") as inFile:
+        with fileName.open() as inFile:
             envDict = json.load(inFile)
         return envDict
 
     def _record_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
         fileName = self._analysis_status_file(analysisTask, "environment", fragmentIndex)
-        with open(fileName, "w") as outFile:
+        with fileName.open("w") as outFile:
             json.dump(dict(os.environ), outFile, indent=4)
 
     def record_analysis_started(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
@@ -807,24 +798,20 @@ class DataSet(object):
         self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
     ) -> None:
         fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-        with open(fileName, "w") as f:
+        with fileName.open("w") as f:
             f.write("%s" % time.time())
 
     def _check_analysis_event(
         self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
     ) -> bool:
         fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-        return os.path.exists(fileName)
+        return fileName.exists()
 
     def _reset_analysis_event(
         self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
     ):
         fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-
-        try:
-            os.remove(fileName)
-        except FileNotFoundError:
-            pass
+        fileName.unlink(missing_ok=True)
 
     def is_analysis_idle(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
         fileName = self._analysis_status_file(analysisTask, "run", fragmentIndex)
@@ -859,9 +846,9 @@ class DataSet(object):
 class ImageDataSet(DataSet):
     def __init__(
         self,
-        dataDirectoryName: str,
-        dataHome: str = None,
-        analysisHome: str = None,
+        dataDirectoryName: Path,
+        dataHome: Path | None = None,
+        analysisHome: Path | None = None,
         microscopeParametersName: str = None,
     ):
         """Create a dataset for the specified raw data.
@@ -915,12 +902,12 @@ class ImageDataSet(DataSet):
 
     def _import_microscope_parameters(self, microscopeParametersName):
         sourcePath = merlin.MICROSCOPE_PARAMETERS_HOME / microscopeParametersName
-        destPath = os.sep.join([self.analysisPath, "microscope_parameters.json"])
+        destPath = self.analysisPath / "microscope_parameters.json"
 
         shutil.copyfile(sourcePath, destPath)
 
     def _load_microscope_parameters(self):
-        path = os.sep.join([self.analysisPath, "microscope_parameters.json"])
+        path = self.analysisPath / "microscope_parameters.json"
 
         if os.path.exists(path):
             with open(path) as inputFile:
@@ -964,12 +951,12 @@ Overlap = namedtuple("Overlap", ["fov", "xslice", "yslice"])
 class MERFISHDataSet(ImageDataSet):
     def __init__(
         self,
-        dataDirectoryName: str,
+        dataDirectoryName: Path,
         codebookNames: List[str] = None,
-        dataOrganizationName: str = None,
+        dataOrganizationName: Path | None = None,
         positionFileName: str = None,
-        dataHome: str = None,
-        analysisHome: str = None,
+        dataHome: Path | None = None,
+        analysisHome: Path | None = None,
         microscopeParametersName: str = None,
         fovList: str = None,
         skip: list = None,
@@ -1155,10 +1142,10 @@ class MERFISHDataSet(ImageDataSet):
         """
         return self.dataOrganization.get_z_positions()
 
-    def get_fovs(self) -> List[int]:
+    def get_fovs(self) -> list[int]:
         return self.dataOrganization.get_fovs()
 
-    def get_imaging_rounds(self) -> List[int]:
+    def get_imaging_rounds(self) -> list[int]:
         # TODO - check this function
         return np.unique(self.dataOrganization.fileMap["imagingRound"])
 
@@ -1182,19 +1169,19 @@ class MERFISHDataSet(ImageDataSet):
             metadata = self.get_image_xml_metadata(self.dataOrganization.get_image_filename(0, f))
             currentPositions = metadata["settings"]["acquisition"]["stage_position"]["#text"].split(",")
             positionData.append([float(x) for x in currentPositions])
-        positionPath = os.sep.join([self.analysisPath, "positions.csv"])
+        positionPath = self.analysisPath / "positions.csv"
         np.savetxt(positionPath, np.array(positionData), delimiter=",")
 
     def _load_positions(self):
-        positionPath = os.sep.join([self.analysisPath, "positions.csv"])
-        if not os.path.exists(positionPath):
+        positionPath = self.analysisPath / "positions.csv"
+        if not positionPath.exists():
             self._import_positions_from_metadata()
         self.positions = pandas.read_csv(positionPath, header=None, names=["X", "Y"])
         self.positions.index = self.get_fovs()
 
     def _import_positions(self, positionFileName):
-        sourcePath = os.sep.join([merlin.POSITION_HOME, positionFileName])
-        destPath = os.sep.join([self.analysisPath, "positions.csv"])
+        sourcePath = merlin.POSITION_HOME / positionFileName
+        destPath = self.analysisPath / "positions.csv"
 
         shutil.copyfile(sourcePath, destPath)
 

@@ -81,13 +81,12 @@ def get_analysis_datasets(max_depth: int = 2) -> list[dataset.DataSet]:
     """
     metadata_files = []
     for depth in range(1, max_depth + 1):
-        metadata_files += pathlib.Path(ANALYSIS_HOME).glob("/".join(["*"] * depth) + "/dataset.json")
+        metadata_files.extend(ANALYSIS_HOME.glob("/".join(["*"] * depth) + "/dataset.json"))
 
-    def load_dataset(json_path: str) -> dataset.DataSet:
-        with pathlib.Path(json_path) as f:
-            metadata = json.load(f)
-            module = importlib.import_module(metadata["module"])
-            task = getattr(module, metadata["class"])
-            return task(metadata["dataset_name"])
+    def load_dataset(json_path: pathlib.Path) -> dataset.DataSet:
+        metadata = json.loads(json_path.read_text())
+        module = importlib.import_module(metadata["module"])
+        task = getattr(module, metadata["class"])
+        return task(metadata["dataset_name"])
 
     return [load_dataset(m) for m in metadata_files]

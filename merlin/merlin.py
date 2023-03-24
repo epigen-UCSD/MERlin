@@ -1,7 +1,7 @@
 """Main entry point for the MERlin pipeline."""
 import argparse
 import json
-import pathlib
+from pathlib import Path
 import sys
 from typing import TextIO
 
@@ -51,18 +51,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def clean_string_arg(string: str) -> str:
+def clean_string_arg(string: str) -> str | None:
     """Remove any single or double quotes around string."""
-    if string is None:
-        return None
-    return string.strip("'").strip('"')
+    return None if string is None else string.strip("'").strip('"')
+
+
+def get_optional_path(string: str) -> Path | None:
+    string = clean_string_arg(string)
+    return Path(string) if string is not None else None
 
 
 def get_input_path(prompt: str) -> str:
     """Ask user to provide a directory."""
     while True:
         path = str(input(prompt))
-        if not path.startswith("s3://") and not pathlib.Path(path).expanduser().exists():
+        if not path.startswith("s3://") and not Path(path).expanduser().exists():
             print(f"Directory {path} does not exist. Please enter a valid path.")
         else:
             return path
@@ -91,15 +94,15 @@ def run_merlin() -> None:
 
     dataset = MERFISHDataSet(
         args.dataset,
-        dataOrganizationName=clean_string_arg(args.data_organization),
+        dataOrganizationName=get_optional_path(args.data_organization),
         codebookNames=args.codebook,
-        microscopeParametersName=clean_string_arg(args.microscope_parameters),
-        positionFileName=clean_string_arg(args.positions),
-        dataHome=clean_string_arg(args.data_home),
-        analysisHome=clean_string_arg(args.analysis_home),
-        fovList=clean_string_arg(args.fovs),
+        microscopeParametersName=get_optional_path(args.microscope_parameters),
+        positionFileName=get_optional_path(args.positions),
+        dataHome=get_optional_path(args.data_home),
+        analysisHome=get_optional_path(args.analysis_home),
+        fovList=get_optional_path(args.fovs),
         profile=args.profile,
-        skip=args.skip
+        skip=args.skip,
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME
@@ -108,7 +111,7 @@ def run_merlin() -> None:
     if args.analysis_parameters:
         # This is run in all cases that analysis parameters are provided
         # so that new analysis tasks are generated to match the new parameters
-        with pathlib.Path(parameters_home, args.analysis_parameters).open() as f:
+        with Path(parameters_home, args.analysis_parameters).open() as f:
             snakefile_path = generate_analysis_tasks_and_snakefile(dataset, f)
 
     if not args.generate_only:
@@ -126,7 +129,7 @@ def run_merlin() -> None:
         elif snakefile_path:
             snakemake_parameters = {}
             if args.snakemake_parameters:
-                with pathlib.Path(merlin.SNAKEMAKE_PARAMETERS_HOME, args.snakemake_parameters).open() as f:
+                with Path(merlin.SNAKEMAKE_PARAMETERS_HOME, args.snakemake_parameters).open() as f:
                     snakemake_parameters = json.load(f)
 
             run_with_snakemake(dataset, snakefile_path, args.core_count, snakemake_parameters)
@@ -142,14 +145,14 @@ def generate_analysis_tasks_and_snakefile(dataset: MERFISHDataSet, parameters_fi
     return snakefile_path
 
 
-def run_with_snakemake(dataset: MERFISHDataSet, snakefile_path: str, cores: int, snakefile_parameters: dict) -> None:
+def run_with_snakemake(dataset: MERFISHDataSet, snakefile_path: Path, cores: int, snakefile_parameters: dict) -> None:
     """Run the snakemake workflow."""
     print("Running MERlin pipeline through snakemake")
     snakemake.snakemake(
         snakefile_path,
         cores=cores,
         workdir=dataset.get_snakemake_path(),
-        stats=snakefile_path + ".stats",
+        stats=snakefile_path / ".stats",
         lock=False,
         **snakefile_parameters,
     )

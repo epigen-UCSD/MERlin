@@ -29,9 +29,9 @@ class DataPortal(ABC):
             basePath: the base path of the data portal
         Returns: a new DataPortal for reading from basePath
         """
-        if basePath.startswith("s3://"):
+        if str(basePath).startswith("s3://"):
             return S3DataPortal(basePath)
-        elif basePath.startswith("gc://"):
+        elif str(basePath).startswith("gc://"):
             return GCloudDataPortal(basePath)
         else:
             return LocalDataPortal(basePath)
