@@ -9,7 +9,7 @@ from merlin.core import analysistask
 from merlin.util import imagefilters
 
 
-class SumSignal(analysistask.ParallelAnalysisTask):
+class SumSignal(analysistask.AnalysisTask):
 
     """
     An analysis task that calculates the signal intensity within the boundaries
@@ -18,7 +18,9 @@ class SumSignal(analysistask.ParallelAnalysisTask):
     """
 
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
+
+        self.add_dependencies("warp_task", "segment_task", "global_align_task")
 
         if "apply_highpass" not in self.parameters:
             self.parameters["apply_highpass"] = False
@@ -28,22 +30,12 @@ class SumSignal(analysistask.ParallelAnalysisTask):
             self.parameters["z_index"] = 0
 
         if self.parameters["z_index"] >= len(self.dataSet.get_z_positions()):
-            raise analysistask.InvalidParameterException(
+            raise analysistask.InvalidParameterError(
                 "Invalid z_index specified for %s. (%i > %i)"
-                % (self.analysisName, self.parameters["z_index"], len(self.dataSet.get_z_positions()))
+                % (self.analysis_name, self.parameters["z_index"], len(self.dataSet.get_z_positions()))
             )
 
         self.highpass = str(self.parameters["apply_highpass"]).upper() == "TRUE"
-        self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 1
-
-    def get_dependencies(self):
-        return [self.parameters["warp_task"], self.parameters["segment_task"], self.parameters["global_align_task"]]
 
     def _extract_signal(self, cells, inputImage, zIndex) -> pandas.DataFrame:
         cellCoords = []
@@ -56,7 +48,7 @@ class SumSignal(analysistask.ParallelAnalysisTask):
                 for region in regions:
                     coords = region.exterior.coords.xy
                     xyZip = list(zip(coords[0].tolist(), coords[1].tolist()))
-                    pixels.append(np.array(self.alignTask.global_coordinates_to_fov(cell.get_fov(), xyZip)))
+                    pixels.append(np.array(self.global_align_task.global_coordinates_to_fov(cell.get_fov(), xyZip)))
                 cellCoords.append(pixels)
 
         cellIDs = [str(cells[x].get_feature_id()) for x in range(len(cells))]
@@ -75,15 +67,11 @@ class SumSignal(analysistask.ParallelAnalysisTask):
         return propsOut
 
     def _get_sum_signal(self, fov, channels, zIndex):
-
-        fTask = self.dataSet.load_analysis_task(self.parameters["warp_task"])
-        sTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-
-        cells = sTask.get_feature_database().read_features(fov)
+        cells = self.segment_task.get_feature_database().read_features(fov)
 
         signals = []
         for ch in channels:
-            img = fTask.get_aligned_image(fov, ch, zIndex)
+            img = self.warp_task.get_aligned_image(fov, ch, zIndex)
             if self.highpass:
                 highPassSigma = self.parameters["highpass_sigma"]
                 highPassFilterSize = int(2 * np.ceil(3 * highPassSigma) + 1)
@@ -112,10 +100,10 @@ class SumSignal(analysistask.ParallelAnalysisTask):
             return pandas.concat([self.get_sum_signals(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv(
-            "sequential_signal", self.get_analysis_name(), fov, "signals", index_col=0
+            "sequential_signal", self.analysis_name, fov, "signals", index_col=0
         )
 
-    def _run_analysis(self, fragmentIndex):
+    def run_analysis(self, fragmentIndex):
         zIndex = int(self.parameters["z_index"])
         channels, geneNames = self.dataSet.get_data_organization().get_sequential_rounds()
 
@@ -124,7 +112,7 @@ class SumSignal(analysistask.ParallelAnalysisTask):
         normSignal.columns = geneNames
 
         self.dataSet.save_dataframe_to_csv(
-            normSignal, "sequential_signal", self.get_analysis_name(), fragmentIndex, "signals"
+            normSignal, "sequential_signal", self.analysis_name, fragmentIndex, "signals"
         )
 
 
@@ -132,17 +120,9 @@ class ExportSumSignals(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def get_estimated_memory(self):
-        return 2048
+        self.add_dependencies("sequential_task")
 
-    def get_estimated_time(self):
-        return 5
+    def run_analysis(self):
+        signals = self.sequential_task.get_sum_signals()
 
-    def get_dependencies(self):
-        return [self.parameters["sequential_task"]]
-
-    def _run_analysis(self):
-        sTask = self.dataSet.load_analysis_task(self.parameters["sequential_task"])
-        signals = sTask.get_sum_signals()
-
-        self.dataSet.save_dataframe_to_csv(signals, "sequential_sum_signals", self.get_analysis_name())
+        self.dataSet.save_dataframe_to_csv(signals, "sequential_sum_signals", self.analysis_name)

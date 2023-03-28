@@ -9,21 +9,11 @@ class FinalOutput(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        self.segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-        self.linkCellTask = self.dataSet.load_analysis_task(self.parameters["link_cell_task"])
-
-    def get_estimated_memory(self):
-        return 5000
-
-    def get_estimated_time(self):
-        return 30
-
-    def get_dependencies(self):
-        return [self.parameters["partition_task"], self.parameters["segment_task"], self.parameters["link_cell_task"]]
+        self.add_dependencies("partition_task", "segment_task", "link_cell_task")
 
     def _combine_overlap_volumes(self):
         volumes = pd.concat(
-            [self.linkCellTask.get_overlap_volumes(overlapName) for overlapName in self.dataSet.get_overlap_names()]
+            [self.link_cell_task.get_overlap_volumes(overlapName) for overlapName in self.dataSet.get_overlap_names()]
         )
         return volumes.groupby("label").max()
 
@@ -32,12 +22,12 @@ class FinalOutput(analysistask.AnalysisTask):
 
     def get_cell_metadata_table(self):
         try:
-            return self.dataSet.load_dataframe_from_csv("cell_metadata", self.get_analysis_name(), index_col=0)
+            return self.dataSet.load_dataframe_from_csv("cell_metadata", self.analysis_name, index_col=0)
         except FileNotFoundError:
             dfs = []
-            cell_mapping = self.linkCellTask.get_cell_mapping()
+            cell_mapping = self.link_cell_task.get_cell_mapping()
             for fov in self.dataSet.get_fovs():
-                df = self.segmentTask.load_metadata(fov)
+                df = self.segment_task.load_metadata(fov)
                 df["cell_id"] = fov + "__" + df["cell_id"].astype(str)
                 df = df.rename(columns={"volume": "fov_volume"})
                 dfs.append(df)
@@ -54,20 +44,19 @@ class FinalOutput(analysistask.AnalysisTask):
             )
             metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
             metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
-            self.dataSet.save_dataframe_to_csv(metadata, "cell_metadata", self.get_analysis_name())
+            self.dataSet.save_dataframe_to_csv(metadata, "cell_metadata", self.analysis_name)
             return metadata
 
-    def _run_analysis(self):
-        partitionTask = self.dataSet.load_analysis_task(self.parameters["partition_task"])
-        cell_mapping = self.linkCellTask.get_cell_mapping()
+    def run_analysis(self):
+        cell_mapping = self.link_cell_task.get_cell_mapping()
 
-        barcodes = partitionTask.get_barcode_table()
+        barcodes = self.partition_task.get_barcode_table()
         barcodes["cell_id"] = [
             cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in barcodes["cell_id"]
         ]
         self.dataSet.save_dataframe_to_csv(barcodes, "detected_transcripts", self, index=False)
 
-        matrix = partitionTask.get_cell_by_gene_matrix()
+        matrix = self.partition_task.get_cell_by_gene_matrix()
         matrix.index = [cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in matrix.index]
         matrix = matrix.reset_index().groupby("index").sum()
         matrix.index.name = None

@@ -23,6 +23,9 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
+        self.add_dependencies("preprocess_task", "warp_task")
+        self.add_dependencies("previous_iteration", optional=True)
+
         if "fov_per_iteration" not in self.parameters:
             self.parameters["fov_per_iteration"] = 50
         if "area_threshold" not in self.parameters:
@@ -41,7 +44,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             logger.info("Setting fov_per_iteration to length of fov_index")
             self.parameters["fov_per_iteration"] = len(self.parameters["fov_index"])
         else:
-            path = self.dataSet._analysis_result_save_path("", self.analysisName)
+            path = self.dataSet._analysis_result_save_path("", self.analysis_name)
             files = pathlib.Path(path).glob("select_frame_*")
             self.parameters["fov_index"] = [file.stem.split("select_frame_")[-1] for file in files]
             if len(self.parameters["fov_index"]) < self.parameters["fov_per_iteration"]:
@@ -54,31 +57,15 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                     replace=False,
                 ):
                     self.parameters["fov_index"].append(zslice)
-
-    def get_estimated_memory(self):
-        return 4000
-
-    def get_estimated_time(self):
-        return 60
-
-    def get_dependencies(self):
-        dependencies = [self.parameters["preprocess_task"], self.parameters["warp_task"]]
-        if "previous_iteration" in self.parameters:
-            dependencies += [self.parameters["previous_iteration"]]
-        return dependencies
-
-    def fragment_list(self):
-        return self.parameters["fov_index"]
+        self.fragment_list = self.parameters["fov_index"]
 
     def get_codebook(self) -> Codebook:
-        preprocessTask = self.dataSet.load_analysis_task(self.parameters["preprocess_task"])
-        return preprocessTask.get_codebook()
+        return self.preprocess_task.get_codebook()
 
-    def _run_analysis(self, fragmentIndex):
-        preprocessTask = self.dataSet.load_analysis_task(self.parameters["preprocess_task"])
+    def run_analysis(self, fragment):
         codebook = self.get_codebook()
 
-        fovIndex, zIndex = fragmentIndex.split("__")
+        fovIndex, zIndex = fragment.split("__")
         zIndex = int(zIndex)
 
         scaleFactors = self._get_previous_scale_factors()
@@ -86,20 +73,20 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         chromaticTransformations = self._get_previous_chromatic_transformations()
 
         self.dataSet.save_numpy_analysis_result(
-            scaleFactors, "previous_scale_factors", self.analysisName, resultIndex=fragmentIndex
+            scaleFactors, "previous_scale_factors", self.analysis_name, resultIndex=fragment
         )
         self.dataSet.save_numpy_analysis_result(
-            backgrounds, "previous_backgrounds", self.analysisName, resultIndex=fragmentIndex
+            backgrounds, "previous_backgrounds", self.analysis_name, resultIndex=fragment
         )
         self.dataSet.save_pickle_analysis_result(
-            chromaticTransformations, "previous_chromatic_corrections", self.analysisName, resultIndex=fragmentIndex
+            chromaticTransformations, "previous_chromatic_corrections", self.analysis_name, resultIndex=fragment
         )
         self.dataSet.save_numpy_analysis_result(
-            np.array([fovIndex, zIndex]), "select_frame", self.analysisName, resultIndex=fragmentIndex
+            np.array([fovIndex, zIndex]), "select_frame", self.analysis_name, resultIndex=fragment
         )
 
         chromaticCorrector = aberration.RigidChromaticCorrector(chromaticTransformations, self.get_reference_color())
-        warpedImages = preprocessTask.get_processed_image_set(
+        warpedImages = self.preprocess_task.get_processed_image_set(
             fovIndex, zIndex=zIndex, chromaticCorrector=chromaticCorrector
         )
 
@@ -126,16 +113,14 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                     for i in range(codebook.get_barcode_count())
                 ]
             ),
-            fov=fragmentIndex,
+            fov=fragment,
+        )
+        self.dataSet.save_numpy_analysis_result(refactors, "scale_refactors", self.analysis_name, resultIndex=fragment)
+        self.dataSet.save_numpy_analysis_result(
+            backgrounds, "background_refactors", self.analysis_name, resultIndex=fragment
         )
         self.dataSet.save_numpy_analysis_result(
-            refactors, "scale_refactors", self.analysisName, resultIndex=fragmentIndex
-        )
-        self.dataSet.save_numpy_analysis_result(
-            backgrounds, "background_refactors", self.analysisName, resultIndex=fragmentIndex
-        )
-        self.dataSet.save_numpy_analysis_result(
-            barcodesSeen, "barcode_counts", self.analysisName, resultIndex=fragmentIndex
+            barcodesSeen, "barcode_counts", self.analysis_name, resultIndex=fragment
         )
 
     def _get_used_colors(self) -> List[str]:
@@ -149,11 +134,10 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         )
 
     def _calculate_initial_scale_factors(self) -> np.ndarray:
-        preprocessTask = self.dataSet.load_analysis_task(self.parameters["preprocess_task"])
         bitCount = self.get_codebook().get_bit_count()
 
         initialScaleFactors = np.zeros(bitCount)
-        pixelHistograms = preprocessTask.get_pixel_histogram()
+        pixelHistograms = self.preprocess_task.get_pixel_histogram()
         for i in range(bitCount):
             cumulativeHistogram = np.cumsum(pixelHistograms[i])
             cumulativeHistogram = cumulativeHistogram / cumulativeHistogram[-1]
@@ -222,7 +206,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             return {u: {v: transform.SimilarityTransform() for v in usedColors if v >= u} for u in usedColors}
 
         try:
-            return self.dataSet.load_pickle_analysis_result("chromatic_corrections", self.analysisName)
+            return self.dataSet.load_pickle_analysis_result("chromatic_corrections", self.analysis_name)
         # OSError and ValueError are raised if the previous file is not
         # completely written
         except (FileNotFoundError, OSError, ValueError, EOFError):
@@ -235,7 +219,6 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
             barcodes = self.get_barcode_database().get_barcodes()
             uniqueFOVs = np.unique(barcodes["fov"])
-            warpTask = self.dataSet.load_analysis_task(self.parameters["warp_task"])
 
             usedColors = self._get_used_colors()
             colorPairDisplacements = {u: {v: [] for v in usedColors if v >= u} for u in usedColors}
@@ -251,7 +234,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                     # from many different tasks in parallel
                     warpedImages = np.array(
                         [
-                            warpTask.get_aligned_image(
+                            self.warp_task.get_aligned_image(
                                 fov, dataOrganization.get_data_channel_for_bit(b), int(z), previousCorrector
                             )
                             for b in codebook.get_bit_names()
@@ -305,7 +288,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                     )
                     tForms[k][k2] = tForm + previousTransformations[k][k2]
 
-            self.dataSet.save_pickle_analysis_result(tForms, "chromatic_corrections", self.analysisName)
+            self.dataSet.save_pickle_analysis_result(tForms, "chromatic_corrections", self.analysis_name)
 
             return tForms
 
@@ -320,14 +303,14 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             raise Exception("Analysis is still running. Unable to get scale " + "factors.")
 
         try:
-            return self.dataSet.load_numpy_analysis_result("scale_factors", self.analysisName)
+            return self.dataSet.load_numpy_analysis_result("scale_factors", self.analysis_name)
         # OSError and ValueError are raised if the previous file is not
         # completely written
         except (FileNotFoundError, OSError, ValueError, EOFError):
             refactors = np.array(
                 [
-                    self.dataSet.load_numpy_analysis_result("scale_refactors", self.analysisName, resultIndex=i)
-                    for i in self.fragment_list()
+                    self.dataSet.load_numpy_analysis_result("scale_refactors", self.analysis_name, resultIndex=i)
+                    for i in self.fragment_list
                 ]
             )
 
@@ -336,14 +319,16 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
             previousFactors = np.array(
                 [
-                    self.dataSet.load_numpy_analysis_result("previous_scale_factors", self.analysisName, resultIndex=i)
-                    for i in self.fragment_list()
+                    self.dataSet.load_numpy_analysis_result(
+                        "previous_scale_factors", self.analysis_name, resultIndex=i
+                    )
+                    for i in self.fragment_list
                 ]
             )
 
             scaleFactors = np.nanmedian(np.multiply(refactors, previousFactors), axis=0)
 
-            self.dataSet.save_numpy_analysis_result(scaleFactors, "scale_factors", self.analysisName)
+            self.dataSet.save_numpy_analysis_result(scaleFactors, "scale_factors", self.analysis_name)
 
             return scaleFactors
 
@@ -352,34 +337,36 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             raise Exception("Analysis is still running. Unable to get " + "backgrounds.")
 
         try:
-            return self.dataSet.load_numpy_analysis_result("backgrounds", self.analysisName)
+            return self.dataSet.load_numpy_analysis_result("backgrounds", self.analysis_name)
         # OSError and ValueError are raised if the previous file is not
         # completely written
         except (FileNotFoundError, OSError, ValueError, EOFError):
             refactors = np.array(
                 [
-                    self.dataSet.load_numpy_analysis_result("background_refactors", self.analysisName, resultIndex=i)
-                    for i in self.fragment_list()
+                    self.dataSet.load_numpy_analysis_result("background_refactors", self.analysis_name, resultIndex=i)
+                    for i in self.fragment_list
                 ]
             )
 
             previousBackgrounds = np.array(
                 [
-                    self.dataSet.load_numpy_analysis_result("previous_backgrounds", self.analysisName, resultIndex=i)
-                    for i in self.fragment_list()
+                    self.dataSet.load_numpy_analysis_result("previous_backgrounds", self.analysis_name, resultIndex=i)
+                    for i in self.fragment_list
                 ]
             )
 
             previousFactors = np.array(
                 [
-                    self.dataSet.load_numpy_analysis_result("previous_scale_factors", self.analysisName, resultIndex=i)
-                    for i in self.fragment_list()
+                    self.dataSet.load_numpy_analysis_result(
+                        "previous_scale_factors", self.analysis_name, resultIndex=i
+                    )
+                    for i in self.fragment_list
                 ]
             )
 
             backgrounds = np.nanmedian(np.add(previousBackgrounds, np.multiply(refactors, previousFactors)), axis=0)
 
-            self.dataSet.save_numpy_analysis_result(backgrounds, "backgrounds", self.analysisName)
+            self.dataSet.save_numpy_analysis_result(backgrounds, "backgrounds", self.analysis_name)
 
             return backgrounds
 
@@ -410,8 +397,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         """
         countsMean = np.mean(
             [
-                self.dataSet.load_numpy_analysis_result("barcode_counts", self.analysisName, resultIndex=i)
-                for i in self.fragment_list()
+                self.dataSet.load_numpy_analysis_result("barcode_counts", self.analysis_name, resultIndex=i)
+                for i in self.fragment_list
             ],
             axis=0,
         )

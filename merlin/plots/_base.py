@@ -126,11 +126,12 @@ class AbstractPlot(ABC):
         if not self.is_relevant(tasks):
             return
         f = self.create_plot(tasks=tasks, metadata=metadata)
-        f.tight_layout(pad=1)
-        self.plot_task.dataSet.save_figure(
-            self.plot_task, f, self.figure_name(), type(self).__module__.split(".")[-1], formats=self.formats
-        )
-        plt.close(f)
+        if f:
+            f.tight_layout(pad=1)
+            self.plot_task.dataSet.save_figure(
+                self.plot_task, f, self.figure_name(), type(self).__module__.split(".")[-1], formats=self.formats
+            )
+            plt.close(f)
 
 
 class PlotMetadata:
@@ -223,7 +224,7 @@ class PlotMetadata:
     def register_updaters(self, updaters) -> None:
         self.updaters = updaters
         for task in updaters:
-            self.completed[task] = {fragment: False for fragment in self.required_tasks[task].fragment_list()}
+            self.completed[task] = {fragment: False for fragment in self.required_tasks[task].fragment_list}
 
     def register_datasets(self, *datasets) -> None:
         self.datasets = datasets

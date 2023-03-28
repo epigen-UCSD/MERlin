@@ -11,7 +11,7 @@ from merlin.core import analysistask
 from merlin.util import aberration
 
 
-class Warp(analysistask.ParallelAnalysisTask):
+class Warp(analysistask.AnalysisTask):
 
     """
     An abstract class for warping a set of images so that the corresponding
@@ -19,7 +19,7 @@ class Warp(analysistask.ParallelAnalysisTask):
     """
 
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, paralell=True)
 
         if "write_fiducial_images" not in self.parameters:
             self.parameters["write_fiducial_images"] = False
@@ -114,7 +114,7 @@ class Warp(analysistask.ParallelAnalysisTask):
         self.dataSet.save_numpy_analysis_result(
             np.array(transformationList, dtype=object),
             "offsets",
-            self.get_analysis_name(),
+            self.analysis_name,
             resultIndex=fov,
             subdirectory="transformations",
         )
@@ -160,15 +160,6 @@ class FiducialCorrelationWarp(Warp):
         if "reference_round" not in self.parameters:
             self.parameters["reference_round"] = 0
 
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return []
-
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         highPassSigma = self.parameters["highpass_sigma"]
         highPassFilterSize = int(2 * np.ceil(2 * highPassSigma) + 1)
@@ -177,16 +168,16 @@ class FiducialCorrelationWarp(Warp):
             inputImage, (highPassFilterSize, highPassFilterSize), highPassSigma, borderType=cv2.BORDER_REPLICATE
         )
 
-    def _run_analysis(self, fragmentIndex: int):
-        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragmentIndex))
+    def run_analysis(self, fragment: str):
+        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragment))
         offsets = [
             registration.phase_cross_correlation(
-                fixedImage, self._filter(self.dataSet.get_fiducial_image(x, fragmentIndex)), upsample_factor=100
+                fixedImage, self._filter(self.dataSet.get_fiducial_image(x, fragment)), upsample_factor=100
             )[0]
             for x in self.dataSet.get_data_organization().get_one_channel_per_round()
         ]
         transformations = [transform.SimilarityTransform(translation=[-x[1], -x[0]]) for x in offsets]
-        self._process_transformations(transformations, fragmentIndex)
+        self._process_transformations(transformations, fragment)
 
 
 class FiducialBeadWarp(Warp):
@@ -214,15 +205,6 @@ class FiducialBeadWarp(Warp):
             self.parameters["threshold_sigma"] = 4
         if "reference_round" not in self.parameters:
             self.parameters["reference_round"] = 0
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return []
 
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         im = inputImage.astype(np.float32)
@@ -333,12 +315,12 @@ class FiducialBeadWarp(Warp):
 
         return (-(np.array(im_cor.shape) - 1) / 2.0 + [y, x]).astype(int)
 
-    def _run_analysis(self, fragmentIndex: int):
-        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragmentIndex))
+    def run_analysis(self, fragment: str):
+        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragment))
         offsets = []
         im2 = fixedImage.copy()
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
-            im_beads = self._filter(self.dataSet.get_fiducial_image(channel, fragmentIndex))
+            im_beads = self._filter(self.dataSet.get_fiducial_image(channel, fragment))
             im1 = im_beads.copy()
             Txyzs = []
             dic_ims1 = self._get_tiles(im1)
@@ -370,15 +352,15 @@ class FiducialBeadWarp(Warp):
                         pass
                         # print("No kept beads, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
                 else:
-                    print("No beads found, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
+                    print("No beads found, fragmentIndex", fragment, ", channel", channel, ", tile", key)
             offsets.append(np.median(Txyzs, 0))
         transformations = [transform.SimilarityTransform(translation=[-x[1], -x[0]]) for x in offsets]
-        self._process_transformations(transformations, fragmentIndex)
+        self._process_transformations(transformations, fragment)
 
 
-class AlignDAPI3D(analysistask.ParallelAnalysisTask):
+class FiducialAlign(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
         if "sz_norm" not in self.parameters:
             self.parameters["sz_norm"] = 20
@@ -388,15 +370,6 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
             self.parameters["nelems"] = 7
         if "reference_round" not in self.parameters:
             self.parameters["reference_round"] = 0
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return []
 
     def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.
@@ -455,7 +428,7 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
     def get_transformation(self, fov: str, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
         drifts = self.dataSet.load_numpy_analysis_result(
-            "drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
+            "drifts", self.analysis_name, resultIndex=fov, subdirectory="drifts"
         )
         if channel is None:
             return drifts
@@ -493,27 +466,27 @@ class AlignDAPI3D(analysistask.ParallelAnalysisTask):
         txyz = np.median(txyzs, 0).astype(int)
         return txyz, txyzs
 
-    def _run_analysis(self, fov: str) -> None:
+    def run_analysis(self, fragment: str) -> None:
         """
         Given two 3D images im_dapi0,im_dapi1, this normalizes them by subtracting local background
         and then computes correlations on <nelemes> blocks with highest  std of signal of size sz
         It will return median value and a list of single values.
         """
-        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fov)
+        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragment)
         fixed_image = self.norm_slice(fixed_image.astype(np.float32), self.parameters["sz_norm"])
         self.fixed_tiles = self.get_tiles(fixed_image, size=self.parameters["sz"])
         best = np.argsort([np.std(tile) for tile in self.fixed_tiles])[::-1]
-        self.tiles_to_align = best[:min(self.parameters["nelems"], len(best))]
+        self.tiles_to_align = best[: min(self.parameters["nelems"], len(best))]
         drifts = []
         tile_drifts = []
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
-            moving_image = self.dataSet.get_fiducial_image(channel, fov)
+            moving_image = self.dataSet.get_fiducial_image(channel, fragment)
             txyz, txyzs = self.get_txyz(moving_image)
             drifts.append(txyz)
             tile_drifts.append(txyzs)
         self.dataSet.save_numpy_analysis_result(
-            np.array(drifts), "drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
+            np.array(drifts), "drifts", self.analysis_name, resultIndex=fragment, subdirectory="drifts"
         )
         self.dataSet.save_numpy_analysis_result(
-            np.array(tile_drifts), "tile_drifts", self.get_analysis_name(), resultIndex=fov, subdirectory="drifts"
+            np.array(tile_drifts), "tile_drifts", self.analysis_name, resultIndex=fragment, subdirectory="drifts"
         )

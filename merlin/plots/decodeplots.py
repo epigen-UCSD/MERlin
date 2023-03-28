@@ -201,7 +201,7 @@ class DecodedBarcodesMetadata(PlotMetadata):
         )
         if not hasattr(self, "intensity_bins"):  # Still waiting for 20 fovs to complete
             self.queued_data.append(barcodes)
-            if len(self.queued_data) >= min(20, len(self.decode_task.fragment_list()) - 1):
+            if len(self.queued_data) >= min(20, len(self.decode_task.fragment_list) - 1):
                 self._determine_bins()
                 for barcode_data in self.queued_data:
                     self._extract_from_barcodes(barcode_data)

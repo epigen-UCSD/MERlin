@@ -23,17 +23,10 @@ class SlurmReport(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
+        self.add_dependencies("run_after_task")
+
         if "codebook_index" not in self.parameters:
             self.parameters["codebook_index"] = 0
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["run_after_task"]]
 
     def _generate_slurm_report(self, task: analysistask.AnalysisTask):
         if isinstance(task, analysistask.ParallelAnalysisTask):
@@ -196,7 +189,7 @@ class SlurmReport(analysistask.AnalysisTask):
         plt.tight_layout(pad=1)
         self.dataSet.save_figure(self, fig, "time_summary")
 
-    def _run_analysis(self):
+    def run_analysis(self):
         taskList = self.dataSet.get_analysis_tasks()
 
         reportTime = int(time.time())
@@ -212,7 +205,7 @@ class SlurmReport(analysistask.AnalysisTask):
                     slurmDF.to_csv(dfStream, sep="|")
                     self._plot_slurm_report(slurmDF, t)
                     reportDict[t] = slurmDF
-                    analysisParameters[t] = currentTask.get_parameters()
+                    analysisParameters[t] = currentTask.parameters
 
                     try:
                         requests.post(

@@ -10,19 +10,19 @@ from merlin.util import imagefilters
 from merlin.data import codebook
 
 
-class Preprocess(analysistask.ParallelAnalysisTask):
+class Preprocess(analysistask.AnalysisTask):
 
     """
     An abstract class for preparing data for barcode calling.
     """
 
     def _image_name(self, fov):
-        destPath = self.dataSet.get_analysis_subdirectory(self.analysisName, subdirectory="preprocessed_images")
+        destPath = self.dataSet.get_analysis_subdirectory(self.analysis_name, subdirectory="preprocessed_images")
         return os.sep.join([destPath, "fov_" + str(fov) + ".tif"])
 
     def get_pixel_histogram(self, fov=None):
         if fov is not None:
-            return self.dataSet.load_numpy_analysis_result("pixel_histogram", self.analysisName, fov, "histograms")
+            return self.dataSet.load_numpy_analysis_result("pixel_histogram", self.analysis_name, fov, "histograms")
 
         pixelHistogram = np.zeros(self.get_pixel_histogram(self.dataSet.get_fovs()[0]).shape)
         for f in self.dataSet.get_fovs():
@@ -31,12 +31,14 @@ class Preprocess(analysistask.ParallelAnalysisTask):
         return pixelHistogram
 
     def _save_pixel_histogram(self, histogram, fov):
-        self.dataSet.save_numpy_analysis_result(histogram, "pixel_histogram", self.analysisName, fov, "histograms")
+        self.dataSet.save_numpy_analysis_result(histogram, "pixel_histogram", self.analysis_name, fov, "histograms")
 
 
 class DeconvolutionPreprocess(Preprocess):
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
+
+        self.add_dependencies("warp_task")
 
         if "highpass_sigma" not in self.parameters:
             self.parameters["highpass_sigma"] = 3
@@ -52,17 +54,6 @@ class DeconvolutionPreprocess(Preprocess):
         self._highPassSigma = self.parameters["highpass_sigma"]
         self._deconSigma = self.parameters["decon_sigma"]
         self._deconIterations = self.parameters["decon_iterations"]
-
-        self.warpTask = self.dataSet.load_analysis_task(self.parameters["warp_task"])
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["warp_task"]]
 
     def get_codebook(self) -> codebook.Codebook:
         return self.dataSet.get_codebook(self.parameters["codebook_index"])
@@ -101,7 +92,7 @@ class DeconvolutionPreprocess(Preprocess):
     def get_processed_image(
         self, fov: int, dataChannel: int, zIndex: int, chromaticCorrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        inputImage = self.warpTask.get_aligned_image(fov, dataChannel, zIndex, chromaticCorrector)
+        inputImage = self.warp_task.get_aligned_image(fov, dataChannel, zIndex, chromaticCorrector)
         return self._preprocess_image(inputImage)
 
     def _high_pass_filter(self, inputImage: np.ndarray) -> np.ndarray:
@@ -109,9 +100,7 @@ class DeconvolutionPreprocess(Preprocess):
         hpImage = imagefilters.high_pass_filter(inputImage, highPassFilterSize, self._highPassSigma)
         return hpImage.astype(np.float32)
 
-    def _run_analysis(self, fragmentIndex):
-        warpTask = self.dataSet.load_analysis_task(self.parameters["warp_task"])
-
+    def run_analysis(self, fragment):
         histogramBins = np.arange(0, np.iinfo(np.uint16).max, 1)
         pixelHistogram = np.zeros((self.get_codebook().get_bit_count(), len(histogramBins) - 1))
 
@@ -120,12 +109,12 @@ class DeconvolutionPreprocess(Preprocess):
         for bi, b in enumerate(self.get_codebook().get_bit_names()):
             dataChannel = self.dataSet.get_data_organization().get_data_channel_for_bit(b)
             for i in range(len(self.dataSet.get_z_positions())):
-                inputImage = warpTask.get_aligned_image(fragmentIndex, dataChannel, i)
+                inputImage = self.warp_task.get_aligned_image(fragment, dataChannel, i)
                 deconvolvedImage = self._preprocess_image(inputImage)
 
                 pixelHistogram[bi, :] += np.histogram(deconvolvedImage, bins=histogramBins)[0]
 
-        self._save_pixel_histogram(pixelHistogram, fragmentIndex)
+        self._save_pixel_histogram(pixelHistogram, fragment)
 
     def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
         deconFilterSize = self.parameters["decon_filter_size"]
@@ -164,15 +153,6 @@ class FlatFieldPreprocess(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return []
-
     @cached_property
     def mean_image(self):
         return self.dataSet.load_numpy_analysis_result(f"mean_image_{self.parameters['channel']}", self)
@@ -180,7 +160,7 @@ class FlatFieldPreprocess(analysistask.AnalysisTask):
     def process_image(self, image):
         return image / self.mean_image
 
-    def _run_analysis(self) -> None:
+    def run_analysis(self) -> None:
         sum_image = np.zeros(self.dataSet.get_image_dimensions(), dtype=np.uint32)
         for fov in self.dataSet.get_fovs():
             sum_image += self.dataSet.get_raw_image(

@@ -1,37 +1,33 @@
 import copy
-from abc import ABC, abstractmethod
-import threading
-import multiprocessing
-from typing import List
 import cProfile
-import pstats
 import io
+import pstats
+import threading
+from typing import Any
 
 import merlin
 
 
-class AnalysisAlreadyStartedException(Exception):
-    pass
+class AnalysisAlreadyStartedError(Exception):
+    """Analysis has already started."""
 
 
-class AnalysisAlreadyExistsException(Exception):
-    pass
+class AnalysisAlreadyExistsError(Exception):
+    """Analysis already exists."""
 
 
-class InvalidParameterException(Exception):
-    pass
+class InvalidParameterError(Exception):
+    """Analysis parameters are invalid."""
 
 
-class AnalysisTask(ABC):
+class AnalysisTask:
+    """An abstract class for performing analysis on a DataSet.
 
+    Subclasses should implement the analysis to perform in the run_analysis() function.
     """
-    An abstract class for performing analysis on a DataSet. Subclasses
-    should implement the analysis to perform in the run_analysis() function.
-    """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        """Creates an AnalysisTask object that performs analysis on the
-        specified DataSet.
+    def __init__(self, dataSet, parameters: dict[str, Any], analysis_name: str, *, parallel: bool = False) -> None:
+        """Create an AnalysisTask object that performs analysis on the specified DataSet.
 
         Args:
             dataSet: the DataSet to run analysis on.
@@ -42,28 +38,23 @@ class AnalysisTask(ABC):
                 will default to the name of the class.
         """
         self.dataSet = dataSet
-        if parameters is None:
-            self.parameters = {}
+        self.parameters = {} if parameters is None else copy.deepcopy(parameters)
+        if analysis_name is None:
+            self.analysis_name = type(self).__name__
         else:
-            self.parameters = copy.deepcopy(parameters)
-
-        if analysisName is None:
-            self.analysisName = type(self).__name__
-        else:
-            self.analysisName = analysisName
+            self.analysis_name = analysis_name
 
         if "merlin_version" not in self.parameters:
             self.parameters["merlin_version"] = merlin.version()
-        else:
-            if not merlin.is_compatible(self.parameters["merlin_version"]):
-                raise merlin.IncompatibleVersionError(
-                    (
-                        "Analysis task %s has already been created by MERlin "
-                        + "version %s, which is incompatible with the current "
-                        + "MERlin version, %s"
-                    )
-                    % (self.analysisName, self.parameters["merlin_version"], merlin.version())
+        elif not merlin.is_compatible(self.parameters["merlin_version"]):
+            raise merlin.IncompatibleVersionError(
+                (
+                    "Analysis task %s has already been created by MERlin "
+                    "version %s, which is incompatible with the current "
+                    "MERlin version, %s"
                 )
+                % (self.analysis_name, self.parameters["merlin_version"], merlin.version())
+            )
 
         self.parameters["module"] = type(self).__module__
         self.parameters["class"] = type(self).__name__
@@ -71,16 +62,50 @@ class AnalysisTask(ABC):
         if "codebookNum" in self.parameters:
             self.codebookNum = self.parameters["codebookNum"]
 
-        if "profile" not in self.parameters:
-            self.parameters["profile"] = False
+        self._fragment_list = self.dataSet.get_fovs() if parallel else []
+        self.dependencies = set()
 
-    def save(self, overwrite=False) -> None:
+    def __getattr__(self, attr):
+        """Check if an unloaded dependency is being accessed and load it."""
+        if attr in self.dependencies:
+            task = self.dataSet.load_analysis_task(self.parameters[attr])
+            setattr(self, attr, task)
+            return task
+        raise AttributeError(f"{attr} not an attribute of {self}")
+
+    def add_dependencies(self, *args, optional: bool = False) -> None:
+        """Add the given dependencies.
+
+        If optional is True, only dependencies specified in self.parameters are
+        added.
+        """
+        if optional:
+            self.dependencies.update(task for task in args if task in self.parameters)
+        else:
+            self.dependencies.update(args)
+
+    @property
+    def fragment_list(self) -> list[str]:
+        """Get the list of fragments (FOVs) this task is run on.
+
+        This should be set by specific analysis tasks that subclass this class. By default,
+        the fragment list is empty indicating that the task is not run in parallel on each
+        FOV.
+        """
+        return self._fragment_list
+
+    @fragment_list.setter
+    def fragment_list(self, value: list[str]) -> None:
+        self._fragment_list = value
+
+    def save(self, *, overwrite: bool = False) -> None:
         """Save a copy of this AnalysisTask into the data set.
 
         Args:
             overwrite: flag indicating if an existing analysis task with the
                 same name as this analysis task should be overwritten even
                 if the specified parameters are different.
+
         Raises:
             AnalysisAlreadyExistsException: if an analysis task with the
                 same name as this analysis task already exists in the
@@ -88,7 +113,7 @@ class AnalysisTask(ABC):
         """
         self.dataSet.save_analysis_task(self, overwrite)
 
-    def run(self, overwrite=True) -> None:
+    def run(self, fragment: str = "", *, overwrite: bool = True) -> None:
         """Run this AnalysisTask.
 
         Upon completion of the analysis, this function informs the DataSet
@@ -97,277 +122,69 @@ class AnalysisTask(ABC):
         Args:
             overwrite: flag indicating if previous analysis from this
                 analysis task should be overwritten.
+
         Raises:
-            AnalysisAlreadyStartedException: if this analysis task is currently
+            AnalysisAlreadyStartedError: if this analysis task is currently
                 already running or if overwrite is not True and this analysis
                 task has already completed or exited with an error.
         """
-        logger = self.dataSet.get_logger(self)
-        logger.info("Beginning " + self.get_analysis_name())
-
-        try:
-            if self.is_running():
-                raise AnalysisAlreadyStartedException(
-                    "Unable to run %s since it is already running" % self.analysisName
-                )
-
-            if overwrite:
-                self._reset_analysis()
-
-            if self.is_complete() or self.is_error():
-                raise AnalysisAlreadyStartedException("Unable to run %s since it has already run" % self.analysisName)
-
-            self.dataSet.record_analysis_started(self)
-            self._indicate_running()
-            if self.dataSet.profile:
-                profiler = cProfile.Profile()
-                profiler.enable()
-                self._run_analysis()
-                profiler.disable()
-                stat_string = io.StringIO()
-                stats = pstats.Stats(profiler, stream=stat_string)
-                stats.sort_stats("time")
-                stats.print_stats()
-                logger.info(stat_string.getvalue())
-            else:
-                self._run_analysis()
-            self.dataSet.record_analysis_complete(self)
-            logger.info("Completed " + self.get_analysis_name())
-            self.dataSet.close_logger(self)
-        except Exception as e:
-            logger.exception(e)
-            self.dataSet.record_analysis_error(self)
-            self.dataSet.close_logger(self)
-            raise e
-
-    def _reset_analysis(self) -> None:
-        """Remove files created by this analysis task and remove markers
-        indicating that this analysis has been started, or has completed.
-
-        This function should be overridden by subclasses so that they
-        can delete the analysis files.
-        """
-        self.dataSet.reset_analysis_status(self)
-
-    def _indicate_running(self) -> None:
-        """A loop that regularly signals to the dataset that this analysis
-        task is still running successfully.
-
-        Once this function is called, the dataset will be notified every
-        minute that this analysis is still running until the analysis
-        completes.
-        """
-        if self.is_complete() or self.is_error():
-            return
-
-        self.dataSet.record_analysis_running(self)
-        self.runTimer = threading.Timer(30, self._indicate_running)
-        self.runTimer.daemon = True
-        self.runTimer.start()
-
-    @abstractmethod
-    def _run_analysis(self) -> None:
-        """Perform the analysis for this AnalysisTask.
-
-        This function should be implemented in all subclasses with the
-        logic to complete the analysis.
-        """
-        pass
-
-    @abstractmethod
-    def get_estimated_memory(self) -> float:
-        """Get an estimate of how much memory is required for this
-        AnalysisTask.
-
-        Returns:
-            a memory estimate in megabytes.
-        """
-        pass
-
-    @abstractmethod
-    def get_estimated_time(self) -> float:
-        """Get an estimate for the amount of time required to complete
-        this AnalysisTask.
-
-        Returns:
-            a time estimate in minutes.
-        """
-        pass
-
-    @abstractmethod
-    def get_dependencies(self) -> List[str]:
-        """Get the analysis tasks that must be completed before this
-        analysis task can proceed.
-
-        Returns:
-            a list containing the names of the analysis tasks that
-                this analysis task depends on. If there are no dependencies,
-                an empty list is returned.
-        """
-        pass
-
-    def get_parameters(self):
-        """Get the parameters for this analysis task.
-
-        Returns:
-            the parameter dictionary
-        """
-        return self.parameters
-
-    def is_error(self):
-        """Determines if an error has occurred while running this analysis
-
-        Returns:
-            True if the analysis is complete and otherwise False.
-        """
-        return self.dataSet.check_analysis_error(self)
-
-    def is_complete(self):
-        """Determines if this analysis has completed successfully
-
-        Returns:
-            True if the analysis is complete and otherwise False.
-        """
-        return self.dataSet.check_analysis_done(self)
-
-    def is_started(self):
-        """Determines if this analysis has started.
-
-        Returns:
-            True if the analysis has begun and otherwise False.
-        """
-        return self.dataSet.check_analysis_started(self)
-
-    def is_running(self):
-        """Determines if this analysis task is expected to be running,
-        but has unexpectedly stopped for more than two minutes.
-        """
-        if not self.is_started():
-            return False
-        if self.is_complete():
-            return False
-
-        return not self.dataSet.is_analysis_idle(self)
-
-    def get_analysis_name(self):
-        """Get the name for this AnalysisTask.
-
-        Returns:
-            the name of this AnalysisTask
-        """
-        return self.analysisName
-
-    def is_parallel(self):
-        """Determine if this analysis task uses multiple cores."""
-        return False
-
-
-class InternallyParallelAnalysisTask(AnalysisTask):
-
-    """
-    An abstract class for analysis that can only be run in one part,
-    but can internally be sped up using multiple processes. Subclasses
-    should implement the analysis to perform in the run_analysis() function.
-    """
-
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
-        self.coreCount = multiprocessing.cpu_count()
-
-    def set_core_count(self, coreCount):
-        """Set the number of parallel processes this analysis task is
-        allowed to use.
-        """
-        self.coreCount = coreCount
-
-    def is_parallel(self):
-        return True
-
-
-class ParallelAnalysisTask(AnalysisTask):
-
-    # TODO - this can be restructured so that AnalysisTask is instead a subclass
-    # of ParallelAnalysisTask where fragment count is set to 1. This could
-    # help remove some of the redundant code
-
-    """
-    An abstract class for analysis that can be run in multiple parts
-    independently. Subclasses should implement the analysis to perform in
-    the run_analysis() function
-    """
-
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
-
-    def run(self, fragmentName: str = None, overwrite=True) -> None:
-        """Run the specified index of this analysis task.
-
-        If fragment index is not provided. All fragments for this analysis
-        task are run in serial.
-
-        Args:
-            fragmentIndex: the index of the analysis fragment to run or None
-                if all fragments should be run.
-        """
-        if fragmentName is None:
-            for i in self.fragment_list():
-                self.run(i, overwrite)
+        if not fragment and self.is_parallel():
+            for i in self.fragment_list:
+                self.run(i, overwrite=overwrite)
         else:
-            logger = self.dataSet.get_logger(self, fragmentName)
-            logger.info("Beginning %s %s" % (self.get_analysis_name(), fragmentName))
+            logger = self.dataSet.get_logger(self, fragment)
+            logger.info(f"Beginning {self.analysis_name} {fragment}")
             try:
-                if self.is_running(fragmentName):
-                    raise AnalysisAlreadyStartedException(
-                        ("Unable to run %s fragment %s since it is already " + "running")
-                        % (self.analysisName, fragmentName)
+                if self.is_running(fragment):
+                    raise AnalysisAlreadyStartedError(
+                       f"Unable to run {self.analysis_name} fragment {fragment} since it is already running"
                     )
 
                 if overwrite:
-                    self._reset_analysis(fragmentName)
+                    self.reset_analysis(fragment)
 
-                if self.is_complete(fragmentName) or self.is_error(fragmentName):
-                    raise AnalysisAlreadyStartedException(
-                        "Unable to run %s fragment %s since it has already run" % (self.analysisName, fragmentName)
+                if self.is_complete(fragment) or self.is_error(fragment):
+                    raise AnalysisAlreadyStartedError(
+                       f"Unable to run {self.analysis_name} fragment {fragment} since it has already run"
                     )
 
-                self.dataSet.record_analysis_started(self, fragmentName)
-                self._indicate_running(fragmentName)
+                self.dataSet.record_analysis_started(self, fragment)
+                self.indicate_running(fragment)
                 if self.dataSet.profile:
                     profiler = cProfile.Profile()
                     profiler.enable()
-                    self._run_analysis(fragmentName)
+                if fragment:
+                    self.run_analysis(fragment=fragment)
+                else:
+                    self.run_analysis()
+                if self.dataSet.profile:
                     profiler.disable()
                     stat_string = io.StringIO()
                     stats = pstats.Stats(profiler, stream=stat_string)
                     stats.sort_stats("time")
                     stats.print_stats()
                     logger.info(stat_string.getvalue())
-                else:
-                    self._run_analysis(fragmentName)
-                self.dataSet.record_analysis_complete(self, fragmentName)
-                logger.info("Completed %s %s" % (self.get_analysis_name(), fragmentName))
-                self.dataSet.close_logger(self, fragmentName)
-            except Exception as e:
-                logger.exception(e)
-                self.dataSet.record_analysis_error(self, fragmentName)
-                self.dataSet.close_logger(self, fragmentName)
-                raise e
+                self.dataSet.record_analysis_complete(self, fragment)
+                logger.info(f"Completed {self.analysis_name} {fragment}")
+                self.dataSet.close_logger(self, fragment)
+            except Exception:
+                logger.exception("")
+                self.dataSet.record_analysis_error(self, fragment)
+                self.dataSet.close_logger(self, fragment)
 
-    def fragment_list(self):
-        return self.dataSet.get_fovs()
-
-    def _reset_analysis(self, fragmentName: str = None) -> None:
+    def reset_analysis(self, fragment: str = "") -> None:
         """Remove files created by this analysis task and remove markers
         indicating that this analysis has been started, or has completed.
+
+        This function should be overridden by subclasses so that they
+        can delete the analysis files.
         """
-        if fragmentName is None:
-            for i in self.fragment_list():
-                self._reset_analysis(i)
+        if not fragment and self.is_parallel():
+            for i in self.fragment_list:
+                self.reset_analysis(i)
+        self.dataSet.reset_analysis_status(self)
 
-        else:
-            self.dataSet.reset_analysis_status(self, fragmentName)
-
-    def _indicate_running(self, fragmentName: str) -> None:
+    def indicate_running(self, fragment: str = "") -> None:
         """A loop that regularly signals to the dataset that this analysis
         task is still running successfully.
 
@@ -375,62 +192,49 @@ class ParallelAnalysisTask(AnalysisTask):
         minute that this analysis is still running until the analysis
         completes.
         """
-        if self.is_complete(fragmentName) or self.is_error(fragmentName):
+        if self.is_complete(fragment) or self.is_error(fragment):
             return
 
-        self.dataSet.record_analysis_running(self, fragmentName)
-        self.runTimer = threading.Timer(30, self._indicate_running, [fragmentName])
+        self.dataSet.record_analysis_running(self, fragment)
+        self.runTimer = threading.Timer(30, self.indicate_running, [fragment])
         self.runTimer.daemon = True
         self.runTimer.start()
 
-    @abstractmethod
-    def _run_analysis(self, fragmentName):
-        pass
+    def is_error(self, fragment: str = "") -> bool:
+        """Determine if an error has occurred while running this analysis."""
+        if not fragment and self.is_parallel():
+            return any(self.is_error(i) for i in self.fragment_list)
+        return self.dataSet.check_analysis_error(self, fragment)
 
-    def is_error(self, fragmentName=None):
-        if fragmentName is None:
-            for i in self.fragment_list():
-                if self.is_error(i):
-                    return True
-
-            return False
-        else:
-            return self.dataSet.check_analysis_error(self, fragmentName)
-
-    def is_complete(self, fragmentName=None):
-        if fragmentName is None:
-            missingCount = []
+    def is_complete(self, fragment: str = "") -> bool:
+        """Determine if this analysis has completed successfully."""
+        if self.is_parallel() and not fragment:
             if self.dataSet.check_analysis_done(self):
                 return True
-            else:
-                for i in self.fragment_list():
-                    if not self.is_complete(i):
-                        missingCount.append(i)
-                if len(missingCount) > 0:
-                    return False
-                else:
-                    self.dataSet.record_analysis_complete(self)
-                    return True
-        else:
-            return self.dataSet.check_analysis_done(self, fragmentName)
-
-    def is_started(self, fragmentName=None):
-        if fragmentName is None:
-            for i in self.fragment_list():
-                if self.is_started(i):
-                    return True
-
+            all_complete = all(self.is_complete(i) for i in self.fragment_list)
+            if all_complete:
+                self.dataSet.record_analysis_complete(self)
+                return True
             return False
-        else:
-            return self.dataSet.check_analysis_started(self, fragmentName)
+        return self.dataSet.check_analysis_done(self, fragment)
 
-    def is_running(self, fragmentName=None):
-        if not self.is_started(fragmentName):
+    def is_started(self, fragment: str = "") -> bool:
+        """Determine if this analysis has started."""
+        if self.is_parallel() and not fragment:
+            return any(self.is_started(i) for i in self.fragment_list)
+        return self.dataSet.check_analysis_started(self, fragment)
+
+    def is_running(self, fragment: str = "") -> bool:
+        """Determines if this analysis task is expected to be running,
+        but has unexpectedly stopped for more than two minutes.
+        """
+        if not self.is_started(fragment):
             return False
-        if self.is_complete(fragmentName):
+        if self.is_complete(fragment):
             return False
 
-        return not self.dataSet.is_analysis_idle(self, fragmentName)
+        return not self.dataSet.is_analysis_idle(self, fragment)
 
-    def is_parallel(self):
-        return True
+    def is_parallel(self) -> bool:
+        """Determine if this analysis task uses multiple cores."""
+        return len(self.fragment_list) > 0

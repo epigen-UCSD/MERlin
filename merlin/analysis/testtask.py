@@ -9,14 +9,8 @@ class SimpleAnalysisTask(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def _run_analysis(self):
+    def run_analysis(self):
         pass
-
-    def get_estimated_memory(self):
-        return 100
-
-    def get_estimated_time(self):
-        return 1
 
     def get_dependencies(self):
         if "dependencies" in self.parameters:
@@ -29,14 +23,8 @@ class SimpleParallelAnalysisTask(analysistask.ParallelAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def _run_analysis(self, fragmentIndex):
+    def run_analysis(self, fragmentIndex):
         pass
-
-    def get_estimated_memory(self):
-        return 100
-
-    def get_estimated_time(self):
-        return 1
 
     def get_dependencies(self):
         if "dependencies" in self.parameters:
@@ -58,16 +46,10 @@ class RandomNumberParallelAnalysisTask(analysistask.ParallelAnalysisTask):
     def get_random_result(self, fragmentIndex):
         return self.dataSet.load_numpy_analysis_result("random_numbers", self, fragmentIndex)
 
-    def _run_analysis(self, fragmentIndex):
+    def run_analysis(self, fragmentIndex):
         self.dataSet.save_numpy_analysis_result(
             fragmentIndex * np.random.rand(100), "random_numbers", self, fragmentIndex
         )
-
-    def get_estimated_memory(self):
-        return 100
-
-    def get_estimated_time(self):
-        return 1
 
     def get_dependencies(self):
         if "dependencies" in self.parameters:
@@ -83,14 +65,8 @@ class SimpleInternallyParallelAnalysisTask(analysistask.InternallyParallelAnalys
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def _run_analysis(self):
+    def run_analysis(self):
         pass
-
-    def get_estimated_memory(self):
-        return 100
-
-    def get_estimated_time(self):
-        return 1
 
     def get_dependencies(self):
         if "dependencies" in self.parameters:

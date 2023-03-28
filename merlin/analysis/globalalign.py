@@ -110,18 +110,9 @@ class SimpleGlobalAlignment(GlobalAlignment):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def get_estimated_memory(self):
-        return 1
-
-    def get_estimated_time(self):
-        return 0
-
-    def _run_analysis(self):
+    def run_analysis(self):
         # This analysis task does not need computation
         pass
-
-    def get_dependencies(self):
-        return []
 
     def fov_coordinates_to_global(self, fov, fovCoordinates):
         fovStart = self.dataSet.get_fov_offset(fov)
@@ -209,12 +200,6 @@ class CorrelationGlobalAlignment(GlobalAlignment):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-    def get_estimated_memory(self):
-        return 1000
-
-    def get_estimated_time(self):
-        return 60
-
     def fov_coordinates_to_global(self, fov, fovCoordinates):
         raise NotImplementedError
 
@@ -259,7 +244,7 @@ class CorrelationGlobalAlignment(GlobalAlignment):
 
         return overlapAreas
 
-    def _run_analysis(self):
+    def run_analysis(self):
         fov1 = self.dataSet.get_fiducial_image(0, 0)
         fov2 = self.dataSet.get_fiducial_image(0, 1)
 

@@ -13,17 +13,17 @@ from merlin.data.codebook import Codebook
 from merlin.util import barcodefilters
 
 
-class BarcodeSavingParallelAnalysisTask(analysistask.ParallelAnalysisTask):
+class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
 
     """
     An abstract analysis class that saves barcodes into a barcode database.
     """
 
     def __init__(self, dataSet: dataset.DataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-    def _reset_analysis(self, fragmentIndex: int = None) -> None:
-        super()._reset_analysis(fragmentIndex)
+    def reset_analysis(self, fragmentIndex: int = None) -> None:
+        super().reset_analysis(fragmentIndex)
         self.get_barcode_database().empty_database(fragmentIndex)
 
     def get_barcode_database(self) -> barcodedb.BarcodeDB:
@@ -42,6 +42,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
 
     def __init__(self, dataSet: dataset.MERFISHDataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
+
+        self.add_dependencies("preprocess_task", "optimize_task", "global_align_task")
 
         if "crop_width" not in self.parameters:
             self.parameters["crop_width"] = 100
@@ -70,40 +72,22 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         self.cropWidth = self.parameters["crop_width"]
         self.imageSize = dataSet.get_image_dimensions()
 
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        dependencies = [
-            self.parameters["preprocess_task"],
-            self.parameters["optimize_task"],
-            self.parameters["global_align_task"],
-        ]
-
-        return dependencies
-
     def get_codebook(self) -> Codebook:
-        preprocessTask = self.dataSet.load_analysis_task(self.parameters["preprocess_task"])
-        return preprocessTask.get_codebook()
+        return self.preprocess_task.get_codebook()
 
-    def _run_analysis(self, fragmentIndex):
+    def run_analysis(self, fragment):
         """This function decodes the barcodes in a fov and saves them to the
         barcode database.
         """
-        preprocessTask = self.dataSet.load_analysis_task(self.parameters["preprocess_task"])
-        optimizeTask = self.dataSet.load_analysis_task(self.parameters["optimize_task"])
         decode3d = self.parameters["decode_3d"]
 
         lowPassSigma = self.parameters["lowpass_sigma"]
 
         codebook = self.get_codebook()
         decoder = decoding.PixelBasedDecoder(codebook)
-        scaleFactors = optimizeTask.get_scale_factors()
-        backgrounds = optimizeTask.get_backgrounds()
-        chromaticCorrector = optimizeTask.get_chromatic_corrector()
+        scaleFactors = self.optimize_task.get_scale_factors()
+        backgrounds = self.optimize_task.get_backgrounds()
+        chromaticCorrector = self.optimize_task.get_chromatic_corrector()
 
         zPositionCount = len(self.dataSet.get_z_positions())
         bitCount = codebook.get_bit_count()
@@ -115,7 +99,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         if not decode3d:
             for zIndex in range(zPositionCount):
                 di, pm, d = self._process_independent_z_slice(
-                    fragmentIndex, zIndex, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
+                    fragment, zIndex, chromaticCorrector, scaleFactors, backgrounds, self.preprocess_task, decoder
                 )
 
                 decodedImages[zIndex, :, :] = di
@@ -135,7 +119,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     normalizedPixelTraces = np.zeros((zPositionCount, bitCount, *imageShape), dtype=np.float32)
 
                 for zIndex in range(zPositionCount):
-                    imageSet = preprocessTask.get_processed_image_set(fragmentIndex, zIndex, chromaticCorrector)
+                    imageSet = self.preprocess_task.get_processed_image_set(fragment, zIndex, chromaticCorrector)
                     imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
                     di, pm, npt, d = decoder.decode_pixels(
@@ -153,19 +137,19 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     distances[zIndex, :, :] = d
 
                 self._extract_and_save_barcodes(
-                    decoder, decodedImages, magnitudeImages, normalizedPixelTraces, distances, fragmentIndex
+                    decoder, decodedImages, magnitudeImages, normalizedPixelTraces, distances, fragment
                 )
 
                 del normalizedPixelTraces
 
         if self.parameters["write_decoded_images"]:
-            self._save_decoded_images(fragmentIndex, zPositionCount, decodedImages, magnitudeImages, distances)
+            self._save_decoded_images(fragment, zPositionCount, decodedImages, magnitudeImages, distances)
 
         if self.parameters["remove_z_duplicated_barcodes"]:
             bcDB = self.get_barcode_database()
-            bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=fragmentIndex))
-            bcDB.empty_database(fragmentIndex)
-            bcDB.write_barcodes(bc, fov=fragmentIndex)
+            bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=fragment))
+            bcDB.empty_database(fragment)
+            bcDB.write_barcodes(bc, fov=fragment)
 
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
@@ -217,9 +201,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         fov: int,
         zIndex: int = None,
     ) -> None:
-
-        globalTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
-
         minimumArea = self.parameters["minimum_area"]
 
         self.get_barcode_database().write_barcodes(
@@ -234,7 +215,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                         fov,
                         self.cropWidth,
                         zIndex,
-                        globalTask,
+                        self.global_align_task,
                         minimumArea,
                     )
                     for i in range(self.get_codebook().get_barcode_count())
@@ -253,22 +234,25 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         return bc
 
 
-class SpotDecode(analysistask.ParallelAnalysisTask):
+class SpotDecode(analysistask.AnalysisTask):
     def __init__(self, dataSet: dataset.MERFISHDataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["warp_task"]]
+        self.add_dependencies("warp_task")
 
     def norm_image(self, im, s=50):
         im_ = im.astype(np.float32)
         return np.array([im__ - cv2.blur(im__, (s, s)) for im__ in im_], dtype=np.float32)
+
+    def merlin_norm_slice(self, im, s=50):
+        fs = int(2 * np.ceil(2 * s) + 1)
+        lowpass = cv2.GaussianBlur(im, (fs, fs), s, borderType=cv2.BORDER_REPLICATE)
+        im_ = im - lowpass
+        im_[lowpass > im] = 0
+        return im_
+
+    def merlin_norm_image(self, im, s=50):
+        return np.array([self.merlin_norm_slice(im_, s) for im_ in im])
 
     def get_bit_image(self, fov, channel):
         return np.array(
@@ -410,10 +394,10 @@ class SpotDecode(analysistask.ParallelAnalysisTask):
         return Xh
 
     def compute_fits(self, image):
-        image_norm = self.norm_image(image, s=30)
+        image_norm = self.merlin_norm_image(image, s=3)
         return self.get_local_max(
             image_norm,
-            500,
+            200,
             im_raw=image,
             dic_psf=None,
             delta=1,
@@ -525,10 +509,10 @@ class SpotDecode(analysistask.ParallelAnalysisTask):
         # icodesN -> 10000000 index of the decoded molecules in gns_names
         # gns_names
 
-    def _run_analysis(self, fov):
+    def run_analysis(self, fragment):
         result = []
         for bit in self.dataSet.get_codebook().get_bit_names():
-            image = self.get_bit_image(fov, bit)
+            image = self.get_bit_image(fragment, bit)
             fits = self.compute_fits(image)
             colors = self.dataSet.get_data_organization().data.color.unique()
             bit_index = self.dataSet.get_data_organization().get_data_channel_index(bit)
@@ -538,11 +522,10 @@ class SpotDecode(analysistask.ParallelAnalysisTask):
             result.append(fits)
         fits = np.concatenate(result)
         self.dataSet.save_numpy_analysis_result(
-            fits, "fits", self.get_analysis_name(), resultIndex=fov, subdirectory="fits"
+            fits, "fits", self.analysis_name, resultIndex=fragment, subdirectory="fits"
         )
-        align_task = self.dataSet.load_analysis_task(self.parameters["warp_task"])
         for bit in np.unique(fits[:, -1]):
-            drifts = align_task.get_transformation(fov, int(bit))
+            drifts = self.warp_task.get_transformation(fragment, int(bit))
             if len(drifts) == 3:
                 fits[fits[:, -1] == bit, :3] -= drifts
             else:
@@ -550,6 +533,6 @@ class SpotDecode(analysistask.ParallelAnalysisTask):
         inters = self.get_inters(fits)
         XH_pruned, icodesN, gns_names = self.get_icodes(inters, fits)
         savePath = self.dataSet._analysis_result_save_path(
-            "decoded", self.get_analysis_name(), fov, subdirectory="decoded"
+            "decoded", self.analysis_name, fragment, subdirectory="decoded"
         )
         np.savez_compressed(savePath, XH_pruned=XH_pruned, icodesN=icodesN, gns_names=np.array(gns_names))

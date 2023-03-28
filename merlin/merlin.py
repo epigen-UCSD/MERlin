@@ -1,8 +1,8 @@
 """Main entry point for the MERlin pipeline."""
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import TextIO
 
 import snakemake
@@ -40,7 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--analysis-task",
         help="the name of the analysis task to execute. If no analysis task is provided, all tasks are executed.",
     )
-    parser.add_argument("-i", "--fragment-index", help="the index of the fragment of the analysis task to execute")
+    parser.add_argument(
+        "-i", "--fragment-index", default="", help="the index of the fragment of the analysis task to execute"
+    )
     parser.add_argument("-e", "--data-home", help="the data home directory")
     parser.add_argument("-s", "--analysis-home", help="the analysis home directory")
     parser.add_argument("-k", "--snakemake-parameters", help="the name of the snakemake parameters file")
@@ -106,7 +108,7 @@ def run_merlin() -> None:
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME
-    e = executor.LocalExecutor(coreCount=args.core_count)
+    # e = executor.LocalExecutor(coreCount=args.core_count)
     snakefile_path = None
     if args.analysis_parameters:
         # This is run in all cases that analysis parameters are provided
@@ -125,7 +127,7 @@ def run_merlin() -> None:
                 else:
                     print(f"Task {args.analysis_task} is not complete")
             else:
-                e.run(task, index=args.fragment_index)
+                task.run(args.fragment_index)
         elif snakefile_path:
             snakemake_parameters = {}
             if args.snakemake_parameters:
@@ -152,7 +154,7 @@ def run_with_snakemake(dataset: MERFISHDataSet, snakefile_path: Path, cores: int
         snakefile_path,
         cores=cores,
         workdir=dataset.get_snakemake_path(),
-        stats=snakefile_path / ".stats",
+        stats=snakefile_path.with_suffix(".stats"),
         lock=False,
         **snakefile_parameters,
     )

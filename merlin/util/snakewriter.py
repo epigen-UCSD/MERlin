@@ -1,19 +1,20 @@
 import importlib
 import textwrap
+from typing import Any
 
 import networkx
 
 from merlin.core import analysistask, dataset
 
 
-def expand_as_string(task: analysistask.ParallelAnalysisTask) -> str:
+def expand_as_string(task: analysistask.AnalysisTask) -> str:
     """Generate the expand function for the output of a parallel analysis task."""
-    filename = task.dataSet.analysis_done_filename(task.get_analysis_name(), "{g}")
-    return f"expand('{filename}', g={list(task.fragment_list())})"
+    filename = task.dataSet.analysis_done_filename(task.analysis_name, "{g}")
+    return f"expand('{filename}', g={list(task.fragment_list)})"
 
 
 def generate_output(
-    task: analysistask.AnalysisTask, reftask: analysistask.AnalysisTask = None, *, full_output: bool = False
+    task: analysistask.AnalysisTask, reftask: analysistask.AnalysisTask | None = None, *, full_output: bool = False
 ) -> str:
     """Generate the output string for a task.
 
@@ -24,32 +25,38 @@ def generate_output(
     different fragment list (e.g. Optimize), then the output of all fragments for `task`
     are required for input to `reftask` and the expand string is returned.
     """
-    if isinstance(task, analysistask.ParallelAnalysisTask):
-        if full_output:
-            return expand_as_string(task)
-        depends_all = False
-        if reftask:
-            if isinstance(reftask, analysistask.ParallelAnalysisTask):
-                if set(task.fragment_list()) != set(reftask.fragment_list()):
-                    depends_all = True
-            else:
-                depends_all = True
-        if not depends_all:
-            return f"'{task.dataSet.analysis_done_filename(task, '{i}')}'"
+    if not task.is_parallel():
+        return f"'{task.dataSet.analysis_done_filename(task)}'"
+    if full_output:
         return expand_as_string(task)
-    return f"'{task.dataSet.analysis_done_filename(task)}'"
+    depends_all = False
+    if reftask:
+        if task.is_parallel():
+            if set(task.fragment_list) != set(reftask.fragment_list):
+                depends_all = True
+        else:
+            depends_all = True
+    return (
+        expand_as_string(task)
+        if depends_all
+        else f"'{task.dataSet.analysis_done_filename(task, '{i}')}'"
+    )
 
 
 def generate_input(task: analysistask.AnalysisTask) -> str:
     """Generate the input string for a task."""
-    input_tasks = [task.dataSet.load_analysis_task(x) for x in task.get_dependencies()]
-    return ",".join([generate_output(x, task) for x in input_tasks]) if len(input_tasks) > 0 else ""
+    input_tasks = [getattr(task, x) for x in task.dependencies]
+    return (
+        ",".join([generate_output(x, task) for x in input_tasks])
+        if input_tasks
+        else ""
+    )
 
 
 def generate_message(task: analysistask.AnalysisTask) -> str:
     """Generate the message string for a task."""
-    message = f"Running {task.get_analysis_name()}"
-    if isinstance(task, analysistask.ParallelAnalysisTask):
+    message = f"Running {task.analysis_name}"
+    if task.is_parallel():
         message += " {wildcards.i}"
     return message
 
@@ -59,13 +66,13 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) ->
     args = [
         python_path,
         "-m merlin",
-        f"-t {task.analysisName}",
+        f"-t {task.analysis_name}",
         f"-e {task.dataSet.dataHome}",
         f"-s {task.dataSet.analysisHome}",
     ]
     if task.dataSet.profile:
         args.append("--profile")
-    if isinstance(task, analysistask.ParallelAnalysisTask):
+    if task.is_parallel():
         args.append("-i {wildcards.i}")
     args.append(task.dataSet.dataSetName)
     return " ".join(args)
@@ -74,7 +81,7 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) ->
 def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python") -> str:
     """Generate the snakemake rule for a task."""
     string = f"""
-    rule {task.get_analysis_name()}:
+    rule {task.analysis_name}:
         input: {generate_input(task)}
         output: {generate_output(task)}
         message: "{generate_message(task)}"
@@ -84,12 +91,12 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python")
 
 
 class SnakefileGenerator:
-    def __init__(self, parameters, dataset: dataset.DataSet, python_path: str = None):
+    def __init__(self, parameters: dict[str, Any], dataset: dataset.DataSet, python_path: str | None = None):
         self.parameters = parameters
         self.dataset = dataset
         self.python_path = python_path
 
-    def parse_parameters(self) -> dict[str: analysistask.AnalysisTask]:
+    def parse_parameters(self) -> dict[str, analysistask.AnalysisTask]:
         """Create a dict of analysis tasks from the parameters."""
         tasks = {}
         for task_dict in self.parameters["analysis_tasks"]:
@@ -98,24 +105,24 @@ class SnakefileGenerator:
             parameters = task_dict.get("parameters")
             name = task_dict.get("analysis_name")
             task = analysis_class(self.dataset, parameters, name)
-            if task.get_analysis_name() in tasks:
+            if task.analysis_name in tasks:
                 raise Exception(
-                    "Analysis tasks must have unique names. " + task.get_analysis_name() + " is redundant."
+                    "Analysis tasks must have unique names. " + task.analysis_name + " is redundant."
                 )
             # TODO This should be more careful to not overwrite an existing
             # analysis task that has already been run.
             task.save()
-            tasks[task.get_analysis_name()] = task
+            tasks[task.analysis_name] = task
         return tasks
 
-    def identify_terminal_tasks(self, tasks: dict[str: analysistask.AnalysisTask]) -> list[str]:
+    def identify_terminal_tasks(self, tasks: dict[str, analysistask.AnalysisTask]) -> list[str]:
         """Find the terminal tasks."""
         graph = networkx.DiGraph()
         for x in tasks:
             graph.add_node(x)
 
         for x, a in tasks.items():
-            for d in a.get_dependencies():
+            for d in a.dependencies:
                 graph.add_edge(d, x)
 
         return [k for k, v in graph.out_degree if v == 0]

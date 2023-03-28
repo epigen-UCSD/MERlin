@@ -575,7 +575,7 @@ class DataSet(object):
             created if it does not already exist.
         """
         if isinstance(analysisTask, analysistask.AnalysisTask):
-            analysisName = analysisTask.get_analysis_name()
+            analysisName = analysisTask.analysis_name
         else:
             analysisName = analysisTask
 
@@ -599,11 +599,11 @@ class DataSet(object):
         saveName = self.get_task_subdirectory(analysisTask) / "task.json"
 
         try:
-            existingTask = self.load_analysis_task(analysisTask.get_analysis_name())
+            existingTask = self.load_analysis_task(analysisTask.analysis_name)
 
-            existingParameters = existingTask.get_parameters().copy()
+            existingParameters = existingTask.parameters.copy()
             existingVersion = existingParameters["merlin_version"]
-            newParameters = analysisTask.get_parameters().copy()
+            newParameters = analysisTask.parameters.copy()
             newVersion = newParameters["merlin_version"]
 
             if not merlin.is_compatible(existingVersion, newVersion):
@@ -614,7 +614,7 @@ class DataSet(object):
                         + "the current MERlin version, %s. Please remove the "
                         + "old analysis folder to continue."
                     )
-                    % (analysisTask.analysisName, existingVersion, newVersion)
+                    % (analysisTask.analysis_name, existingVersion, newVersion)
                 )
 
             existingParameters.pop("merlin_version")
@@ -632,7 +632,7 @@ class DataSet(object):
             pass
 
         with saveName.open("w") as outFile:
-            json.dump(analysisTask.get_parameters(), outFile, indent=4)
+            json.dump(analysisTask.parameters, outFile, indent=4)
 
     def load_analysis_task(self, analysisTaskName: str) -> analysistask.AnalysisTask:
         loadName = self.get_task_subdirectory(analysisTaskName) / "task.json"
@@ -675,56 +675,53 @@ class DataSet(object):
         analysisPath = self.get_analysis_subdirectory(analysisTaskName, create=False)
         return analysisPath.exists()
 
-    def get_logger(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> logging.Logger:
-        loggerName = analysisTask.get_analysis_name()
-        if fragmentIndex is not None:
-            loggerName += "." + str(fragmentIndex)
+    def get_logger(self, task: analysistask.AnalysisTask, fragment: str = "") -> logging.Logger:
+        logger_name = task.analysis_name
+        if fragment:
+            logger_name += "." + str(fragment)
 
-        logger = logging.getLogger(loggerName)
+        logger = logging.getLogger(logger_name)
         logger.setLevel(logging.DEBUG)
-        fileHandler = logging.FileHandler(self._log_path(analysisTask, fragmentIndex))
-        fileHandler.setLevel(logging.DEBUG)
+        file_handler = logging.FileHandler(self._log_path(task, fragment))
+        file_handler.setLevel(logging.DEBUG)
 
         formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        fileHandler.setFormatter(formatter)
-        logger.addHandler(fileHandler)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
         return logger
 
-    def close_logger(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        loggerName = analysisTask.get_analysis_name()
-        if fragmentIndex is not None:
-            loggerName += "." + str(fragmentIndex)
+    def close_logger(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        logger_name = task.analysis_name
+        if fragment:
+            logger_name += "." + str(fragment)
 
-        logger = logging.getLogger(loggerName)
+        logger = logging.getLogger(logger_name)
 
-        handlerList = list(logger.handlers)
-        for handler in handlerList:
+        for handler in logger.handlers:
             logger.removeHandler(handler)
             handler.flush()
             handler.close()
 
-    def _log_path(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> str:
-        logName = analysisTask.get_analysis_name()
-        if fragmentIndex is not None:
-            logName += "_" + str(fragmentIndex)
-        logName += ".log"
+    def _log_path(self, task: analysistask.AnalysisTask, fragment: str = "") -> str:
+        log_name = task.analysis_name
+        if fragment:
+            log_name += "_" + str(fragment)
+        log_name += ".log"
 
-        return self.get_log_subdirectory(analysisTask) / logName
+        return self.get_log_subdirectory(task) / log_name
 
-    def _analysis_status_file(
-        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentName: str = None
-    ) -> Path:
-        if isinstance(analysisTask, str):
-            analysisTask = self.load_analysis_task(analysisTask)
+    def _analysis_status_file(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> Path:
+        if isinstance(task, str):
+            task = self.load_analysis_task(task)
 
-        if fragmentName is None:
-            fileName = analysisTask.get_analysis_name() + "." + eventName
+        if not fragment:
+            filename = task.analysis_name + "." + event
         else:
-            fileName = analysisTask.get_analysis_name() + "_" + str(fragmentName) + "." + eventName
-        return self.get_task_subdirectory(analysisTask) / fileName
+            filename = task.analysis_name + "_" + str(fragment) + "." + event
+        return self.get_task_subdirectory(task) / filename
 
-    def get_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentName: str = None) -> None:
+    def get_analysis_environment(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
         """Get the environment variables for the system used to run the
         specified analysis task.
 
@@ -737,31 +734,31 @@ class DataSet(object):
         Returns: A dictionary of the environment variables. If the job has not
             yet run, then None is returned.
         """
-        if not self.check_analysis_done(analysisTask, fragmentName):
+        if not self.check_analysis_done(task, fragment):
             return None
 
-        fileName = self._analysis_status_file(analysisTask, "environment", fragmentName)
-        with fileName.open() as inFile:
+        filename = self._analysis_status_file(task, "environment", fragment)
+        with filename.open() as inFile:
             envDict = json.load(inFile)
         return envDict
 
-    def _record_analysis_environment(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        fileName = self._analysis_status_file(analysisTask, "environment", fragmentIndex)
-        with fileName.open("w") as outFile:
-            json.dump(dict(os.environ), outFile, indent=4)
+    def _record_analysis_environment(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        filename = self._analysis_status_file(task, "environment", fragment)
+        with filename.open("w") as outfile:
+            json.dump(dict(os.environ), outfile, indent=4)
 
-    def record_analysis_started(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, "start", fragmentIndex)
-        self._record_analysis_environment(analysisTask, fragmentIndex)
+    def record_analysis_started(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        self._record_analysis_event(task, "start", fragment)
+        self._record_analysis_environment(task, fragment)
 
-    def record_analysis_running(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, "run", fragmentIndex)
+    def record_analysis_running(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        self._record_analysis_event(task, "run", fragment)
 
-    def record_analysis_complete(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, "done", fragmentIndex)
+    def record_analysis_complete(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        self._record_analysis_event(task, "done", fragment)
 
-    def record_analysis_error(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> None:
-        self._record_analysis_event(analysisTask, "error", fragmentIndex)
+    def record_analysis_error(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
+        self._record_analysis_event(task, "error", fragment)
 
     def get_analysis_start_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
         """Get the time that this analysis task started
@@ -794,53 +791,47 @@ class DataSet(object):
             analysisTask, fragmentIndex
         )
 
-    def _record_analysis_event(
-        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
-    ) -> None:
-        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-        with fileName.open("w") as f:
+    def _record_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> None:
+        filename = self._analysis_status_file(task, event, fragment)
+        with filename.open("w") as f:
             f.write("%s" % time.time())
 
-    def _check_analysis_event(
-        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
-    ) -> bool:
-        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-        return fileName.exists()
+    def _check_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> bool:
+        filename = self._analysis_status_file(task, event, fragment)
+        return filename.exists()
 
-    def _reset_analysis_event(
-        self, analysisTask: analysistask.AnalysisTask, eventName: str, fragmentIndex: int = None
-    ):
-        fileName = self._analysis_status_file(analysisTask, eventName, fragmentIndex)
-        fileName.unlink(missing_ok=True)
+    def _reset_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = ""):
+        filename = self._analysis_status_file(task, event, fragment)
+        filename.unlink(missing_ok=True)
 
-    def is_analysis_idle(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
-        fileName = self._analysis_status_file(analysisTask, "run", fragmentIndex)
+    def is_analysis_idle(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
+        filename = self._analysis_status_file(task, "run", fragment)
         try:
-            return time.time() - os.path.getmtime(fileName) > 1
+            return time.time() - os.path.getmtime(filename) > 1
         except FileNotFoundError:
             return True
 
-    def check_analysis_started(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, "start", fragmentIndex)
+    def check_analysis_started(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
+        return self._check_analysis_event(task, "start", fragment)
 
-    def check_analysis_done(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, "done", fragmentIndex)
+    def check_analysis_done(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
+        return self._check_analysis_event(task, "done", fragment)
 
-    def analysis_done_filename(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> str:
-        return Path(self._analysis_status_file(analysisTask, "done", fragmentIndex))
+    def analysis_done_filename(self, task: analysistask.AnalysisTask, fragment: str = "") -> str:
+        return Path(self._analysis_status_file(task, "done", fragment))
 
-    def check_analysis_error(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> bool:
-        return self._check_analysis_event(analysisTask, "error", fragmentIndex)
+    def check_analysis_error(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
+        return self._check_analysis_event(task, "error", fragment)
 
-    def reset_analysis_status(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None):
-        if analysisTask.is_running():
-            raise analysistask.AnalysisAlreadyStartedException()
+    def reset_analysis_status(self, task: analysistask.AnalysisTask, fragment: str = ""):
+        if task.is_running():
+            raise analysistask.AnalysisAlreadyStartedError()
 
-        self._reset_analysis_event(analysisTask, "start", fragmentIndex)
-        self._reset_analysis_event(analysisTask, "run", fragmentIndex)
-        self._reset_analysis_event(analysisTask, "done", fragmentIndex)
-        self._reset_analysis_event(analysisTask, "error", fragmentIndex)
-        self._reset_analysis_event(analysisTask, "done")
+        self._reset_analysis_event(task, "start", fragment)
+        self._reset_analysis_event(task, "run", fragment)
+        self._reset_analysis_event(task, "done", fragment)
+        self._reset_analysis_event(task, "error", fragment)
+        self._reset_analysis_event(task, "done")
 
 
 class ImageDataSet(DataSet):
@@ -960,7 +951,7 @@ class MERFISHDataSet(ImageDataSet):
         microscopeParametersName: str = None,
         fovList: str = None,
         skip: list = None,
-        profile: bool = False
+        profile: bool = False,
     ):
         """Create a MERFISH dataset for the specified raw data.
 

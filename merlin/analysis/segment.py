@@ -18,7 +18,7 @@ import pandas
 import networkx as nx
 
 
-class FeatureSavingAnalysisTask(analysistask.ParallelAnalysisTask):
+class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
 
     """
     An abstract analysis class that saves features into a spatial feature
@@ -26,10 +26,10 @@ class FeatureSavingAnalysisTask(analysistask.ParallelAnalysisTask):
     """
 
     def __init__(self, dataSet: dataset.DataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-    def _reset_analysis(self, fragmentIndex: int = None) -> None:
-        super()._reset_analysis(fragmentIndex)
+    def reset_analysis(self, fragmentIndex: int = None) -> None:
+        super().reset_analysis(fragmentIndex)
         self.get_feature_database().empty_database(fragmentIndex)
 
     def get_feature_database(self) -> spatialfeature.SpatialFeatureDB:
@@ -55,29 +55,18 @@ class WatershedSegment(FeatureSavingAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
+        self.add_dependencies("warp_task", "global_align_task")
+
         if "seed_channel_name" not in self.parameters:
             self.parameters["seed_channel_name"] = "DAPI"
         if "watershed_channel_name" not in self.parameters:
             self.parameters["watershed_channel_name"] = "polyT"
 
-    def get_estimated_memory(self):
-        # TODO - refine estimate
-        return 2048
-
-    def get_estimated_time(self):
-        # TODO - refine estimate
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["warp_task"], self.parameters["global_align_task"]]
-
     def get_cell_boundaries(self) -> List[spatialfeature.SpatialFeature]:
         featureDB = self.get_feature_database()
         return featureDB.read_features()
 
-    def _run_analysis(self, fragmentIndex):
-        globalTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
-
+    def run_analysis(self, fragmentIndex):
         seedIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["seed_channel_name"])
         seedImages = self._read_and_filter_image_stack(fragmentIndex, seedIndex, 5)
 
@@ -100,7 +89,10 @@ class WatershedSegment(FeatureSavingAnalysisTask):
         zPos = np.array(self.dataSet.get_data_organization().get_z_positions())
         featureList = [
             spatialfeature.SpatialFeature.feature_from_label_matrix(
-                (watershedOutput == i), fragmentIndex, globalTask.fov_to_global_transform(fragmentIndex), zPos
+                (watershedOutput == i),
+                fragmentIndex,
+                self.global_align_task.fov_to_global_transform(fragmentIndex),
+                zPos,
             )
             for i in np.unique(watershedOutput)
             if i != 0
@@ -111,18 +103,17 @@ class WatershedSegment(FeatureSavingAnalysisTask):
 
     def _read_and_filter_image_stack(self, fov: int, channelIndex: int, filterSigma: float) -> np.ndarray:
         filterSize = int(2 * np.ceil(2 * filterSigma) + 1)
-        warpTask = self.dataSet.load_analysis_task(self.parameters["warp_task"])
         return np.array(
             [
                 cv2.GaussianBlur(
-                    warpTask.get_aligned_image(fov, channelIndex, z), (filterSize, filterSize), filterSigma
+                    self.warp_task.get_aligned_image(fov, channelIndex, z), (filterSize, filterSize), filterSigma
                 )
                 for z in range(len(self.dataSet.get_z_positions()))
             ]
         )
 
 
-class CleanCellBoundaries(analysistask.ParallelAnalysisTask):
+class CleanCellBoundaries(analysistask.AnalysisTask):
     """
     A task to construct a network graph where each cell is a node, and overlaps
     are represented by edges. This graph is then refined to assign cells to the
@@ -132,26 +123,16 @@ class CleanCellBoundaries(analysistask.ParallelAnalysisTask):
     """
 
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-        self.segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-        self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 30
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"], self.parameters["global_align_task"]]
+        self.add_dependencies("segment_task", "global_align_task")
 
     def return_exported_data(self, fragmentIndex) -> nx.Graph:
         return self.dataSet.load_graph_from_gpickle("cleaned_cells", self, fragmentIndex)
 
-    def _run_analysis(self, fragmentIndex) -> None:
+    def run_analysis(self, fragmentIndex) -> None:
         allFOVs = np.array(self.dataSet.get_fovs())
-        fovBoxes = self.alignTask.get_fov_boxes()
+        fovBoxes = self.global_align_task.get_fov_boxes()
         fovIntersections = sorted([i for i, x in enumerate(fovBoxes) if fovBoxes[fragmentIndex].intersects(x)])
         intersectingFOVs = list(allFOVs[np.array(fovIntersections)])
 
@@ -159,13 +140,13 @@ class CleanCellBoundaries(analysistask.ParallelAnalysisTask):
         count = 0
         idToNum = dict()
         for currentFOV in intersectingFOVs:
-            cells = self.segmentTask.get_feature_database().read_features(currentFOV)
+            cells = self.segment_task.get_feature_database().read_features(currentFOV)
             cells = spatialfeature.simple_clean_cells(cells)
 
             spatialTree, count, idToNum = spatialfeature.construct_tree(cells, spatialTree, count, idToNum)
 
         graph = nx.Graph()
-        cells = self.segmentTask.get_feature_database().read_features(fragmentIndex)
+        cells = self.segment_task.get_feature_database().read_features(fragmentIndex)
         cells = spatialfeature.simple_clean_cells(cells)
         graph = spatialfeature.construct_graph(graph, cells, spatialTree, fragmentIndex, allFOVs, fovBoxes)
 
@@ -185,28 +166,17 @@ class CombineCleanedBoundaries(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        self.cleaningTask = self.dataSet.load_analysis_task(self.parameters["cleaning_task"])
-
-    def get_estimated_memory(self):
-        # TODO - refine estimate
-        return 2048
-
-    def get_estimated_time(self):
-        # TODO - refine estimate
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["cleaning_task"]]
+        self.add_dependencies("cleaning_task")
 
     def return_exported_data(self):
         kwargs = {"index_col": 0}
-        return self.dataSet.load_dataframe_from_csv("all_cleaned_cells", analysisTask=self.analysisName, **kwargs)
+        return self.dataSet.load_dataframe_from_csv("all_cleaned_cells", analysisTask=self.analysis_name, **kwargs)
 
-    def _run_analysis(self):
+    def run_analysis(self):
         allFOVs = self.dataSet.get_fovs()
         graph = nx.Graph()
         for currentFOV in allFOVs:
-            subGraph = self.cleaningTask.return_exported_data(currentFOV)
+            subGraph = self.cleaning_task.return_exported_data(currentFOV)
             graph = nx.compose(graph, subGraph)
 
         cleanedCells = spatialfeature.remove_overlapping_cells(graph)
@@ -218,24 +188,11 @@ class RefineCellDatabases(FeatureSavingAnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        self.segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-        self.cleaningTask = self.dataSet.load_analysis_task(self.parameters["combine_cleaning_task"])
+        self.add_dependencies("segment_task", "combine_cleaning_task")
 
-    def get_estimated_memory(self):
-        # TODO - refine estimate
-        return 2048
-
-    def get_estimated_time(self):
-        # TODO - refine estimate
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"], self.parameters["combine_cleaning_task"]]
-
-    def _run_analysis(self, fragmentIndex):
-
-        cleanedCells = self.cleaningTask.return_exported_data()
-        originalCells = self.segmentTask.get_feature_database().read_features(fragmentIndex)
+    def run_analysis(self, fragmentIndex):
+        cleanedCells = self.cleaning_task.return_exported_data()
+        originalCells = self.segment_task.get_feature_database().read_features(fragmentIndex)
         featureDB = self.get_feature_database()
         cleanedC = cleanedCells[cleanedCells["originalFOV"] == fragmentIndex]
         cleanedGroups = cleanedC.groupby("assignedFOV")
@@ -253,26 +210,20 @@ class ExportCellMetadata(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        self.segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
+        self.add_dependencies("segment_task")
 
-    def get_estimated_memory(self):
-        return 2048
+    def run_analysis(self):
+        df = self.segment_task.get_feature_database().read_feature_metadata()
 
-    def get_estimated_time(self):
-        return 30
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"]]
-
-    def _run_analysis(self):
-        df = self.segmentTask.get_feature_database().read_feature_metadata()
-
-        self.dataSet.save_dataframe_to_csv(df, "feature_metadata", self.analysisName)
+        self.dataSet.save_dataframe_to_csv(df, "feature_metadata", self.analysis_name)
 
 
-class CellposeSegment(analysistask.ParallelAnalysisTask):
+class CellposeSegment(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
+
+        self.add_dependencies("global_align_task")
+        self.add_dependencies("flat_field_task", optional=True)
 
         if "channel" not in self.parameters:
             self.parameters["channel"] = "DAPI"
@@ -292,29 +243,12 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             self.parameters["downscale_xy"] = 1
         if "downscale_z" not in self.parameters:
             self.parameters["downscale_z"] = 1
-        if "flat_field_task" not in self.parameters:
-            self.parameters["flat_field_task"] = None
 
-        self.alignTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
-        if self.parameters["flat_field_task"]:
-            self.flat_field_task = self.dataSet.load_analysis_task(self.parameters["flat_field_task"])
         self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
 
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        dependencies = [self.parameters["global_align_task"]]
-        if self.parameters["flat_field_task"]:
-            dependencies.append(self.parameters["flat_field_task"])
-        return dependencies
-
-    def load_mask(self, fragmentName):
+    def load_mask(self, fragment):
         mask = self.dataSet.load_numpy_analysis_result(
-            "mask", self.get_analysis_name(), resultIndex=fragmentName, subdirectory="masks"
+            "mask", self.analysis_name, resultIndex=fragment, subdirectory="masks"
         )
         if mask.ndim == 3:
             shape = (
@@ -334,25 +268,25 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
         y_int = np.round(np.linspace(0, mask.shape[1] - 1, shape[1])).astype(int)
         return mask[x_int][:, y_int]
 
-    def load_metadata(self, fragmentName):
+    def load_metadata(self, fragment):
         return self.dataSet.load_dataframe_from_csv(
-            "metadata", self.get_analysis_name(), fragmentName, subdirectory="metadata"
+            "metadata", self.analysis_name, fragment, subdirectory="metadata"
         )
 
     def load_image(self, fov, zIndex):
         image = self.dataSet.get_raw_image(self.channelIndex, fov, zIndex)
-        if self.parameters["flat_field_task"]:
+        if "flat_field_task" in self.dependencies:
             image = self.flat_field_task.process_image(image)
         return image[:: self.parameters["downscale_xy"], :: self.parameters["downscale_xy"]]
 
-    def _run_analysis(self, fragmentIndex):
+    def run_analysis(self, fragment):
         if self.parameters["z_pos"] is not None:
             zIndex = self.dataSet.position_to_z_index(self.parameters["z_pos"])
-            inputImage = self.load_image(fragmentIndex, zIndex)
+            inputImage = self.load_image(fragment, zIndex)
         else:
             zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
             inputImage = np.array(
-                [self.load_image(fragmentIndex, self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions]
+                [self.load_image(fragment, self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions]
             )
         model = cpmodels.Cellpose(gpu=False, model_type="cyto2")
         if inputImage.ndim == 2:
@@ -388,48 +322,40 @@ class CellposeSegment(analysistask.ParallelAnalysisTask):
             metadata["volume"] *= downscale * downscale * self.parameters["downscale_z"]
         else:
             metadata["volume"] *= downscale * downscale
-        global_x, global_y = self.alignTask.fov_coordinates_to_global(fragmentIndex, metadata[["x", "y"]].T.to_numpy())
+        global_x, global_y = self.global_align_task.fov_coordinates_to_global(
+            fragment, metadata[["x", "y"]].T.to_numpy()
+        )
         metadata["global_x"] = global_x
         metadata["global_y"] = global_y
         self.dataSet.save_numpy_analysis_result(
-            mask, "mask", self.get_analysis_name(), resultIndex=fragmentIndex, subdirectory="masks"
+            mask, "mask", self.analysis_name, resultIndex=fragment, subdirectory="masks"
         )
         self.dataSet.save_dataframe_to_csv(
             metadata,
             "metadata",
-            self.get_analysis_name(),
-            resultIndex=fragmentIndex,
+            self.analysis_name,
+            resultIndex=fragment,
             subdirectory="metadata",
             index=False,
         )
 
 
-class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
+class LinkCellsInOverlaps(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-        self.globalTask = self.dataSet.load_analysis_task(self.parameters["global_align_task"])
+        self.add_dependencies("segment_task", "global_align_task")
 
-    def fragment_list(self):
-        return self.dataSet.get_overlap_names()
-
-    def get_estimated_memory(self):
-        return 2048
-
-    def get_estimated_time(self):
-        return 5
-
-    def get_dependencies(self):
-        return [self.parameters["segment_task"], self.parameters["global_align_task"]]
+        self.fragment_list = self.dataSet.get_overlap_names()
 
     def get_links(self, overlapName):
         return self.dataSet.load_pickle_analysis_result(
-            "paired_cells", self.get_analysis_name(), resultIndex=overlapName, subdirectory="paired_cells"
+            "paired_cells", self.analysis_name, resultIndex=overlapName, subdirectory="paired_cells"
         )
 
     def get_cell_mapping(self):
         try:
-            return self.dataSet.load_pickle_analysis_result("cell_links", self.get_analysis_name())
+            return self.dataSet.load_pickle_analysis_result("cell_links", self.analysis_name)
         except FileNotFoundError:
             linked_sets = []
             for overlapName in self.dataSet.get_overlap_names():
@@ -455,13 +381,13 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
                 name = list(link_set)[0]
                 for cell in link_set:
                     cell_links[cell] = name
-            self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.get_analysis_name())
+            self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.analysis_name)
             return cell_links
 
     def get_overlap_volumes(self, overlapName):
         return self.dataSet.load_dataframe_from_csv(
             "overlap_volume",
-            self.get_analysis_name(),
+            self.analysis_name,
             resultIndex=overlapName,
             subdirectory="volumes",
         )
@@ -502,13 +428,12 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
         # Only keep the pairs found in both directions
         return s1 & s2
 
-    def _run_analysis(self, overlapName):
+    def run_analysis(self, fragment: str) -> None:
         """Identify the cells overlapping FOVs that are the same cell."""
-        segmentTask = self.dataSet.load_analysis_task(self.parameters["segment_task"])
-        a, b = self.dataSet.get_overlap(overlapName)
+        a, b = self.dataSet.get_overlap(fragment)
         pairs = set()
-        mask_a = segmentTask.load_mask(a.fov)
-        mask_b = segmentTask.load_mask(b.fov)
+        mask_a = self.segment_task.load_mask(a.fov)
+        mask_b = self.segment_task.load_mask(b.fov)
         # Get portions of masks that overlap
         if len(mask_a.shape) == 2:
             strip_a = mask_a[a.xslice, a.yslice]
@@ -519,7 +444,7 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
         newpairs = self.match_cells_in_overlap(strip_a, strip_b)
         pairs = {(a.fov + "__" + str(x[0]), b.fov + "__" + str(x[1])) for x in newpairs}
         self.dataSet.save_pickle_analysis_result(
-            pairs, "paired_cells", self.get_analysis_name(), resultIndex=overlapName, subdirectory="paired_cells"
+            pairs, "paired_cells", self.analysis_name, resultIndex=fragment, subdirectory="paired_cells"
         )
         dfa = pd.DataFrame(regionprops_table(strip_a, properties=["label", "area"]))
         dfa["label"] = a.fov + "__" + dfa["label"].astype(str)
@@ -528,7 +453,7 @@ class LinkCellsInOverlaps(analysistask.ParallelAnalysisTask):
         self.dataSet.save_dataframe_to_csv(
             pd.concat([dfa, dfb]).set_index("label"),
             "overlap_volume",
-            self.get_analysis_name(),
-            resultIndex=overlapName,
+            self.analysis_name,
+            resultIndex=fragment,
             subdirectory="volumes",
         )
