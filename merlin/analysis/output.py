@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
 import scanpy as sc
+from pathlib import Path
 
 from merlin.core import analysistask
 
 
 class FinalOutput(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("partition_task", "segment_task", "link_cell_task")
 

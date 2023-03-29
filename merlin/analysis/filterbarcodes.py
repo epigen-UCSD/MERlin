@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas
 from scipy import optimize
@@ -11,8 +13,8 @@ class AbstractFilterBarcodes(decode.BarcodeSavingParallelAnalysisTask):
     An abstract class for filtering barcodes identified by pixel-based decoding.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self, *, parallel: bool) -> None:
+        super().setup(parallel=parallel)
 
     def get_codebook(self):
         return self.decode_task.get_codebook()
@@ -25,8 +27,8 @@ class FilterBarcodes(AbstractFilterBarcodes):
     intensity.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("decode_task")
         self.set_default_parameters({
@@ -55,8 +57,8 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
     area, minimum distance histogram for barcodes as they are decoded.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("run_after_task")
         self.set_default_parameters({
@@ -283,8 +285,8 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
     is selected to achieve a specified misidentification rate.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("adaptive_task", "decode_task")
         self.set_default_parameters({

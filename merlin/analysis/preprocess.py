@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 from functools import cached_property
+from pathlib import Path
 
 from merlin.core import analysistask
 from merlin.util import deconvolve
@@ -35,8 +36,8 @@ class Preprocess(analysistask.AnalysisTask):
 
 
 class DeconvolutionPreprocess(Preprocess):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("warp_task")
         self.set_default_parameters({
@@ -125,15 +126,15 @@ class DeconvolutionPreprocess(Preprocess):
 
 
 class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup()
 
         # Check for 'decon_iterations' in parameters instead of
         # self.parameters as 'decon_iterations' is added to
         # self.parameters by the super-class with a default value
         # of 20, but we want the default value to be 2.
-        if "decon_iterations" not in parameters:
-            self.parameters["decon_iterations"] = 2
+        #if "decon_iterations" not in parameters:
+        #    self.parameters["decon_iterations"] = 2
 
         self._deconIterations = self.parameters["decon_iterations"]
 
@@ -148,8 +149,8 @@ class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
 
 
 class FlatFieldPreprocess(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
     @cached_property
     def mean_image(self):

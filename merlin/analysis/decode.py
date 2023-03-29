@@ -1,16 +1,15 @@
-import numpy as np
-import pandas
 import os
 import tempfile
+from pathlib import Path
+
 import cv2
+import numpy as np
+import pandas
 from scipy.spatial import cKDTree
 
-from merlin.core import dataset
-from merlin.core import analysistask
-from merlin.util import decoding
-from merlin.util import barcodedb
+from merlin.core import analysistask, dataset
 from merlin.data.codebook import Codebook
-from merlin.util import barcodefilters
+from merlin.util import barcodedb, barcodefilters, decoding
 
 
 class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
@@ -19,8 +18,8 @@ class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
     An abstract analysis class that saves barcodes into a barcode database.
     """
 
-    def __init__(self, dataSet: dataset.DataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self, *, parallel: bool) -> None:
+        super().setup(parallel=parallel)
 
     def reset_analysis(self, fragmentIndex: int = None) -> None:
         super().reset_analysis(fragmentIndex)
@@ -40,8 +39,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     An analysis task that extracts barcodes from images.
     """
 
-    def __init__(self, dataSet: dataset.MERFISHDataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("preprocess_task", "optimize_task", "global_align_task")
         self.set_default_parameters({
@@ -59,7 +58,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         })
 
         self.cropWidth = self.parameters["crop_width"]
-        self.imageSize = dataSet.get_image_dimensions()
+        self.imageSize = self.dataSet.get_image_dimensions()
 
     def get_codebook(self) -> Codebook:
         return self.preprocess_task.get_codebook()
@@ -224,8 +223,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
 
 
 class SpotDecode(analysistask.AnalysisTask):
-    def __init__(self, dataSet: dataset.MERFISHDataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("warp_task")
 

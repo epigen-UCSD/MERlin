@@ -17,8 +17,8 @@ class SumSignal(analysistask.AnalysisTask):
     RNA species that were stained individually.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("warp_task", "segment_task", "global_align_task")
         self.set_default_parameters({
@@ -115,8 +115,8 @@ class SumSignal(analysistask.AnalysisTask):
 
 
 class ExportSumSignals(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("sequential_task")
 

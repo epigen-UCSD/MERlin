@@ -1,21 +1,18 @@
-import cv2
-import numpy as np
-from skimage import measure
-from skimage import segmentation
-import rtree
 from typing import List
+
+import cv2
+import networkx as nx
+import numpy as np
+import pandas as pd
+import rtree
 from cellpose import models as cpmodels
 from cellpose import utils
-import pandas as pd
-from skimage.segmentation import expand_labels
+from skimage import measure, segmentation
 from skimage.measure import regionprops_table
+from skimage.segmentation import expand_labels
 
-from merlin.core import dataset
-from merlin.core import analysistask
-from merlin.util import spatialfeature
-from merlin.util import watershed
-import pandas
-import networkx as nx
+from merlin.core import analysistask, dataset
+from merlin.util import spatialfeature, watershed
 
 
 class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
@@ -25,8 +22,8 @@ class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
     database.
     """
 
-    def __init__(self, dataSet: dataset.DataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self, *, parallel: bool) -> None:
+        super().setup(parallel=parallel)
 
     def reset_analysis(self, fragmentIndex: int = None) -> None:
         super().reset_analysis(fragmentIndex)
@@ -52,8 +49,8 @@ class WatershedSegment(FeatureSavingAnalysisTask):
     view boundary.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("warp_task", "global_align_task")
         self.set_default_parameters({
@@ -121,8 +118,8 @@ class CleanCellBoundaries(analysistask.AnalysisTask):
     position.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("segment_task", "global_align_task")
 
@@ -162,8 +159,8 @@ class CombineCleanedBoundaries(analysistask.AnalysisTask):
 
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("cleaning_task")
 
@@ -184,8 +181,8 @@ class CombineCleanedBoundaries(analysistask.AnalysisTask):
 
 
 class RefineCellDatabases(FeatureSavingAnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("segment_task", "combine_cleaning_task")
 
@@ -206,8 +203,8 @@ class ExportCellMetadata(analysistask.AnalysisTask):
     An analysis task exports cell metadata.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("segment_task")
 
@@ -218,8 +215,8 @@ class ExportCellMetadata(analysistask.AnalysisTask):
 
 
 class CellposeSegment(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("global_align_task")
         self.add_dependencies("flat_field_task", optional=True)
@@ -332,8 +329,8 @@ class CellposeSegment(analysistask.AnalysisTask):
 
 
 class LinkCellsInOverlaps(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("segment_task", "global_align_task")
 

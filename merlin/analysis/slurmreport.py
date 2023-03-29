@@ -20,8 +20,8 @@ class SlurmReport(analysistask.AnalysisTask):
     with every analysis task fragment run as a separate job.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("run_after_task")
         self.set_default_parameters({
@@ -31,10 +31,10 @@ class SlurmReport(analysistask.AnalysisTask):
     def _generate_slurm_report(self, task: analysistask.AnalysisTask):
         if isinstance(task, analysistask.ParallelAnalysisTask):
             idList = [
-                self.dataSet.get_analysis_environment(task, fov)["SLURM_JOB_ID"] for fov in task.dataSet.get_fovs()
+                task.get_environment(fov)["SLURM_JOB_ID"] for fov in task.dataSet.get_fovs()
             ]
         else:
-            idList = [self.dataSet.get_analysis_environment(task)["SLURM_JOB_ID"]]
+            idList = [task.get_environment()["SLURM_JOB_ID"]]
 
         queryResult = subprocess.run(
             [

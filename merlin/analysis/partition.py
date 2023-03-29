@@ -1,6 +1,7 @@
 import pandas
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from merlin.core import analysistask
 
@@ -12,8 +13,8 @@ class PartitionBarcodes(analysistask.AnalysisTask):
     based on the boundaries determined during the segment task.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("filter_task", "assignment_task", "alignment_task")
 
@@ -78,8 +79,8 @@ class ExportPartitionedBarcodes(analysistask.AnalysisTask):
     field of view into a single output file.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("partition_task")
 
@@ -96,8 +97,8 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
     based on segmentation masks produced during the segment task.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.add_dependencies("segment_task", "filter_task")
 

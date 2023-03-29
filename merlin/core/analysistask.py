@@ -1,8 +1,12 @@
 import copy
 import cProfile
 import io
+import json
+import os
 import pstats
 import threading
+import time
+from pathlib import Path
 from typing import Any
 
 import merlin
@@ -26,7 +30,7 @@ class AnalysisTask:
     Subclasses should implement the analysis to perform in the run_analysis() function.
     """
 
-    def __init__(self, dataSet, parameters: dict[str, Any], analysis_name: str, *, parallel: bool = False) -> None:
+    def __init__(self, dataSet, path: Path, parameters: dict[str, Any], analysis_name: str) -> None:
         """Create an AnalysisTask object that performs analysis on the specified DataSet.
 
         Args:
@@ -43,6 +47,8 @@ class AnalysisTask:
             self.analysis_name = type(self).__name__
         else:
             self.analysis_name = analysis_name
+
+        self.path = path / self.analysis_name
 
         if "merlin_version" not in self.parameters:
             self.parameters["merlin_version"] = merlin.version()
@@ -62,6 +68,9 @@ class AnalysisTask:
         if "codebookNum" in self.parameters:
             self.codebookNum = self.parameters["codebookNum"]
 
+        self.setup()
+
+    def setup(self, *, parallel: bool) -> None:
         self._fragment_list = self.dataSet.get_fovs() if parallel else []
         self.dependencies = set()
 
@@ -142,7 +151,7 @@ class AnalysisTask:
             try:
                 if self.is_running(fragment):
                     raise AnalysisAlreadyStartedError(
-                       f"Unable to run {self.analysis_name} fragment {fragment} since it is already running"
+                        f"Unable to run {self.analysis_name} fragment {fragment} since it is already running"
                     )
 
                 if overwrite:
@@ -150,10 +159,11 @@ class AnalysisTask:
 
                 if self.is_complete(fragment) or self.is_error(fragment):
                     raise AnalysisAlreadyStartedError(
-                       f"Unable to run {self.analysis_name} fragment {fragment} since it has already run"
+                        f"Unable to run {self.analysis_name} fragment {fragment} since it has already run"
                     )
 
-                self.dataSet.record_analysis_started(self, fragment)
+                self.record_status("start", fragment)
+                self.record_environment(fragment)
                 self.indicate_running(fragment)
                 if self.dataSet.profile:
                     profiler = cProfile.Profile()
@@ -169,12 +179,12 @@ class AnalysisTask:
                     stats.sort_stats("time")
                     stats.print_stats()
                     logger.info(stat_string.getvalue())
-                self.dataSet.record_analysis_complete(self, fragment)
+                self.record_status("done", fragment)
                 logger.info(f"Completed {self.analysis_name} {fragment}")
                 self.dataSet.close_logger(self, fragment)
             except Exception:
                 logger.exception("")
-                self.dataSet.record_analysis_error(self, fragment)
+                self.record_status("error", fragment)
                 self.dataSet.close_logger(self, fragment)
 
     def reset_analysis(self, fragment: str = "") -> None:
@@ -187,7 +197,7 @@ class AnalysisTask:
         if not fragment and self.is_parallel():
             for i in self.fragment_list:
                 self.reset_analysis(i)
-        self.dataSet.reset_analysis_status(self)
+        self.reset()
 
     def indicate_running(self, fragment: str = "") -> None:
         """A loop that regularly signals to the dataset that this analysis
@@ -200,34 +210,85 @@ class AnalysisTask:
         if self.is_complete(fragment) or self.is_error(fragment):
             return
 
-        self.dataSet.record_analysis_running(self, fragment)
+        self.record_status("run", fragment)
         self.runTimer = threading.Timer(30, self.indicate_running, [fragment])
         self.runTimer.daemon = True
         self.runTimer.start()
+
+    def status_file(self, status: str, fragment: str = "") -> Path:
+        filename = f"{self.analysis_name}_{fragment}.{status}" if fragment else f"{self.analysis_name}.{status}"
+        return Path(self.path, "tasks", filename)
+
+    def status(self, status: str, fragment: str = "") -> bool:
+        return self.status_file(status, fragment).exists()
+
+    def record_status(self, status: str, fragment: str = "") -> None:
+        filename = self.status_file(status, fragment)
+        with filename.open("w") as f:
+            f.write(f"{time.time()}")
+
+    def reset_status(self, status: str, fragment: str = "") -> None:
+        filename = self.status_file(status, fragment)
+        filename.unlink(missing_ok=True)
+
+    def reset(self, fragment: str = "") -> None:
+        if self.is_running():
+            raise AnalysisAlreadyStartedError()
+
+        self.reset_status("start", fragment)
+        self.reset_status("run", fragment)
+        self.reset_status("done", fragment)
+        self.reset_status("error", fragment)
+        self.reset_status("done")
+
+    def record_environment(self, fragment: str = "") -> None:
+        filename = self.status_file("environment", fragment)
+        with filename.open("w") as outfile:
+            json.dump(dict(os.environ), outfile, indent=4)
+
+    def get_environment(self, fragment: str = "") -> None:
+        """Get the environment variables for the system used to run the
+        specified analysis task.
+
+        Args:
+            analysisTask: The completed analysis task to get the environment
+                variables for.
+            fragmentIndex: The fragment index of the analysis task to
+                get the environment variables for.
+
+        Returns: A dictionary of the environment variables. If the job has not
+            yet run, then None is returned.
+        """
+        if not self.status("done", fragment):
+            return None
+
+        filename = self.status_file("environment", fragment)
+        with filename.open() as infile:
+            return json.load(infile)
 
     def is_error(self, fragment: str = "") -> bool:
         """Determine if an error has occurred while running this analysis."""
         if not fragment and self.is_parallel():
             return any(self.is_error(i) for i in self.fragment_list)
-        return self.dataSet.check_analysis_error(self, fragment)
+        return self.status("error", fragment)
 
     def is_complete(self, fragment: str = "") -> bool:
         """Determine if this analysis has completed successfully."""
         if self.is_parallel() and not fragment:
-            if self.dataSet.check_analysis_done(self):
+            if self.status("done"):
                 return True
             all_complete = all(self.is_complete(i) for i in self.fragment_list)
             if all_complete:
-                self.dataSet.record_analysis_complete(self)
+                self.record_status("done")
                 return True
             return False
-        return self.dataSet.check_analysis_done(self, fragment)
+        return self.status("done", fragment)
 
     def is_started(self, fragment: str = "") -> bool:
         """Determine if this analysis has started."""
         if self.is_parallel() and not fragment:
             return any(self.is_started(i) for i in self.fragment_list)
-        return self.dataSet.check_analysis_started(self, fragment)
+        return self.status("start", fragment)
 
     def is_running(self, fragment: str = "") -> bool:
         """Determines if this analysis task is expected to be running,
@@ -238,7 +299,14 @@ class AnalysisTask:
         if self.is_complete(fragment):
             return False
 
-        return not self.dataSet.is_analysis_idle(self, fragment)
+        return not self.is_idle(fragment)
+
+    def is_idle(self, fragment: str = "") -> bool:
+        filename = self.status_file("run", fragment)
+        try:
+            return time.time() - os.path.getmtime(filename) > 1
+        except FileNotFoundError:
+            return True
 
     def is_parallel(self) -> bool:
         """Determine if this analysis task uses multiple cores."""

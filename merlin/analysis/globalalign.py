@@ -3,6 +3,7 @@ import numpy as np
 from typing import Tuple
 from typing import List
 from shapely import geometry
+from pathlib import Path
 
 from merlin.core import analysistask
 
@@ -15,8 +16,8 @@ class GlobalAlignment(analysistask.AnalysisTask):
     a global alignment.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self, *, parallel: bool) -> None:
+        super().setup(parallel=parallel)
 
     @abstractmethod
     def fov_coordinates_to_global(self, fov: int, fovCoordinates: Tuple[float, float]) -> Tuple[float, float]:
@@ -107,8 +108,8 @@ class SimpleGlobalAlignment(GlobalAlignment):
     order to determine the relative positions of each field of view.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
     def run_analysis(self):
         # This analysis task does not need computation
@@ -197,8 +198,8 @@ class CorrelationGlobalAlignment(GlobalAlignment):
     # if the x-y orientation of the camera is not perfectly oriented with
     # the microscope stage
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
     def fov_coordinates_to_global(self, fov, fovCoordinates):
         raise NotImplementedError

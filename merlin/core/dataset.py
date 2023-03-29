@@ -565,7 +565,7 @@ class DataSet(object):
             return defaultValue
 
     def get_analysis_subdirectory(
-        self, analysisTask: TaskOrName, subdirectory: str = None, create: bool = True
+        self, analysisTask: TaskOrName, subdirectory: str = '', create: bool = True
     ) -> Path:
         """
         analysisTask can either be the class or a string containing the
@@ -579,10 +579,10 @@ class DataSet(object):
         else:
             analysisName = analysisTask
 
-        if subdirectory is None:
-            subdirectoryPath = self.analysisPath / analysisName
+        if subdirectory:
+            subdirectoryPath = self.analysisPath / analysisName / subdirectory
         else:
-            subdirectoryPath = self.analysisPath / analysisName / str(subdirectory)
+            subdirectoryPath = self.analysisPath / analysisName
 
         if create:
             subdirectoryPath.mkdir(parents=True, exist_ok=True)
@@ -641,7 +641,7 @@ class DataSet(object):
             parameters: dict[str, str] = json.load(inFile)
             analysisModule = importlib.import_module(parameters["module"])
             analysisTask = getattr(analysisModule, parameters["class"])
-            return analysisTask(self, parameters, analysisTaskName)
+            return analysisTask(self, self.analysisPath, parameters, analysisTaskName)
 
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
         """
@@ -710,128 +710,6 @@ class DataSet(object):
         log_name += ".log"
 
         return self.get_log_subdirectory(task) / log_name
-
-    def _analysis_status_file(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> Path:
-        if isinstance(task, str):
-            task = self.load_analysis_task(task)
-
-        if not fragment:
-            filename = task.analysis_name + "." + event
-        else:
-            filename = task.analysis_name + "_" + str(fragment) + "." + event
-        return self.get_task_subdirectory(task) / filename
-
-    def get_analysis_environment(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        """Get the environment variables for the system used to run the
-        specified analysis task.
-
-        Args:
-            analysisTask: The completed analysis task to get the environment
-                variables for.
-            fragmentIndex: The fragment index of the analysis task to
-                get the environment variables for.
-
-        Returns: A dictionary of the environment variables. If the job has not
-            yet run, then None is returned.
-        """
-        if not self.check_analysis_done(task, fragment):
-            return None
-
-        filename = self._analysis_status_file(task, "environment", fragment)
-        with filename.open() as inFile:
-            envDict = json.load(inFile)
-        return envDict
-
-    def _record_analysis_environment(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        filename = self._analysis_status_file(task, "environment", fragment)
-        with filename.open("w") as outfile:
-            json.dump(dict(os.environ), outfile, indent=4)
-
-    def record_analysis_started(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        self._record_analysis_event(task, "start", fragment)
-        self._record_analysis_environment(task, fragment)
-
-    def record_analysis_running(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        self._record_analysis_event(task, "run", fragment)
-
-    def record_analysis_complete(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        self._record_analysis_event(task, "done", fragment)
-
-    def record_analysis_error(self, task: analysistask.AnalysisTask, fragment: str = "") -> None:
-        self._record_analysis_event(task, "error", fragment)
-
-    def get_analysis_start_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
-        """Get the time that this analysis task started
-
-        Returns:
-            The start time for the analysis task execution in seconds since
-            the epoch in UTC.
-        """
-        with open(self._analysis_status_file(analysisTask, "start", fragmentIndex), "r") as f:
-            return float(f.read())
-
-    def get_analysis_complete_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
-        """Get the time that this analysis task completed.
-
-        Returns:
-            The completion time for the analysis task execution in seconds since
-            the epoch in UTC.
-        """
-        with open(self._analysis_status_file(analysisTask, "done", fragmentIndex), "r") as f:
-            return float(f.read())
-
-    def get_analysis_elapsed_time(self, analysisTask: analysistask.AnalysisTask, fragmentIndex: int = None) -> float:
-        """Get the time that this analysis took to complete.
-
-        Returns:
-            The elapsed time for the analysis task execution in seconds.
-            Returns None if the analysis task has not yet completed.
-        """
-        return self.get_analysis_complete_time(analysisTask, fragmentIndex) - self.get_analysis_start_time(
-            analysisTask, fragmentIndex
-        )
-
-    def _record_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> None:
-        filename = self._analysis_status_file(task, event, fragment)
-        with filename.open("w") as f:
-            f.write("%s" % time.time())
-
-    def _check_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = "") -> bool:
-        filename = self._analysis_status_file(task, event, fragment)
-        return filename.exists()
-
-    def _reset_analysis_event(self, task: analysistask.AnalysisTask, event: str, fragment: str = ""):
-        filename = self._analysis_status_file(task, event, fragment)
-        filename.unlink(missing_ok=True)
-
-    def is_analysis_idle(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
-        filename = self._analysis_status_file(task, "run", fragment)
-        try:
-            return time.time() - os.path.getmtime(filename) > 1
-        except FileNotFoundError:
-            return True
-
-    def check_analysis_started(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
-        return self._check_analysis_event(task, "start", fragment)
-
-    def check_analysis_done(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
-        return self._check_analysis_event(task, "done", fragment)
-
-    def analysis_done_filename(self, task: analysistask.AnalysisTask, fragment: str = "") -> str:
-        return Path(self._analysis_status_file(task, "done", fragment))
-
-    def check_analysis_error(self, task: analysistask.AnalysisTask, fragment: str = "") -> bool:
-        return self._check_analysis_event(task, "error", fragment)
-
-    def reset_analysis_status(self, task: analysistask.AnalysisTask, fragment: str = ""):
-        if task.is_running():
-            raise analysistask.AnalysisAlreadyStartedError()
-
-        self._reset_analysis_event(task, "start", fragment)
-        self._reset_analysis_event(task, "run", fragment)
-        self._reset_analysis_event(task, "done", fragment)
-        self._reset_analysis_event(task, "error", fragment)
-        self._reset_analysis_event(task, "done")
 
 
 class ImageDataSet(DataSet):

@@ -1,16 +1,14 @@
-import numpy as np
 import itertools
-from skimage import transform
-from typing import Dict
-from typing import List
+from pathlib import Path
+from typing import Dict, List
+
+import numpy as np
 import pandas
-import pathlib
+from skimage import transform
 
 from merlin.analysis import decode
-from merlin.util import decoding
-from merlin.util import registration
-from merlin.util import aberration
 from merlin.data.codebook import Codebook
+from merlin.util import aberration, decoding, registration
 
 
 class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
@@ -20,8 +18,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
     optimization.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)  # We'll set our own fragment list
 
         self.add_dependencies("preprocess_task", "warp_task")
         self.add_dependencies("previous_iteration", optional=True)
@@ -40,7 +38,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             self.parameters["fov_per_iteration"] = len(self.parameters["fov_index"])
         else:
             path = self.dataSet._analysis_result_save_path("", self.analysis_name)
-            files = pathlib.Path(path).glob("select_frame_*")
+            files = Path(path).glob("select_frame_*")
             self.parameters["fov_index"] = [file.stem.split("select_frame_")[-1] for file in files]
             if len(self.parameters["fov_index"]) < self.parameters["fov_per_iteration"]:
                 zIndices = list(range(len(self.dataSet.get_z_positions())))

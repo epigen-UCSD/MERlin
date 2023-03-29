@@ -18,8 +18,8 @@ class Warp(analysistask.AnalysisTask):
     pixels align between images taken in different imaging rounds.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self, *, parallel: bool) -> None:
+        super().setup(parallel=parallel)
 
         self.set_default_parameters({
             "write_fiducial_images": False,
@@ -152,8 +152,8 @@ class FiducialCorrelationWarp(Warp):
     rounds based on the crosscorrelation between fiducial images.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.set_default_parameters({
             "highpass_sigma": 3,
@@ -186,8 +186,8 @@ class FiducialBeadWarp(Warp):
     rounds based on alignment of local maxima (beads).
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.set_default_parameters({
             "delta": 2,
@@ -353,8 +353,8 @@ class FiducialBeadWarp(Warp):
 
 
 class FiducialAlign(analysistask.AnalysisTask):
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, parallel=True)
+    def setup(self) -> None:
+        super().setup(parallel=True)
 
         self.set_default_parameters({
             "sz_norm": 20,

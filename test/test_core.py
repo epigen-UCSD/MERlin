@@ -48,10 +48,10 @@ def test_save_environment(simple_task):
     task1 = simple_task
     task1.run()
     environment = dict(os.environ)
-    if isinstance(simple_task, analysistask.ParallelAnalysisTask):
-        taskEnvironment = simple_task.dataSet.get_analysis_environment(simple_task, 0)
+    if simple_task.is_parallel():
+        taskEnvironment = simple_task.get_environment(0)
     else:
-        taskEnvironment = simple_task.dataSet.get_analysis_environment(simple_task)
+        taskEnvironment = simple_task.get_environment()
 
     assert environment == taskEnvironment
 

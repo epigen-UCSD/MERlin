@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from merlin.core import analysistask
 
 
@@ -8,8 +10,8 @@ class ExportBarcodes(analysistask.AnalysisTask):
     intensity.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("filter_task")
         self.set_default_parameters({

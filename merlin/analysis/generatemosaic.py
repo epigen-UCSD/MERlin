@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import cv2
 from typing import Tuple
@@ -15,8 +17,8 @@ class GenerateMosaic(analysistask.AnalysisTask):
     field of views.
     """
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.add_dependencies("global_align_task", "warp_task")
         self.set_default_parameters({

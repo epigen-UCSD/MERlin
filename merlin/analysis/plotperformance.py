@@ -13,8 +13,8 @@ plt.style.use(os.sep.join([os.path.dirname(merlin.__file__), "ext", "default.mpl
 class PlotPerformance(analysistask.AnalysisTask):
     """An analysis task that generates plots depicting metrics of the MERFISH decoding."""
 
-    def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName)
+    def setup(self) -> None:
+        super().setup(parallel=False)
 
         self.set_default_parameters({
             "exclude_plots": []
