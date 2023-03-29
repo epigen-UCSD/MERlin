@@ -39,17 +39,15 @@ class DeconvolutionPreprocess(Preprocess):
         super().__init__(dataSet, parameters, analysisName, parallel=True)
 
         self.add_dependencies("warp_task")
+        self.set_default_parameters({
+            "highpass_sigma": 3,
+            "decon_sigma": 2,
+            "decon_iterations": 20,
+            "codebook_index": 0
+        })
 
-        if "highpass_sigma" not in self.parameters:
-            self.parameters["highpass_sigma"] = 3
-        if "decon_sigma" not in self.parameters:
-            self.parameters["decon_sigma"] = 2
         if "decon_filter_size" not in self.parameters:
             self.parameters["decon_filter_size"] = int(2 * np.ceil(2 * self.parameters["decon_sigma"]) + 1)
-        if "decon_iterations" not in self.parameters:
-            self.parameters["decon_iterations"] = 20
-        if "codebook_index" not in self.parameters:
-            self.parameters["codebook_index"] = 0
 
         self._highPassSigma = self.parameters["highpass_sigma"]
         self._deconSigma = self.parameters["decon_sigma"]

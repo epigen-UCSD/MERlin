@@ -19,15 +19,12 @@ class GenerateMosaic(analysistask.AnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("global_align_task", "warp_task")
-
-        if "microns_per_pixel" not in self.parameters:
-            self.parameters["microns_per_pixel"] = 3
-        if "fov_crop_width" not in self.parameters:
-            self.parameters["fov_crop_width"] = 0
-        if "separate_files" not in self.parameters:
-            self.parameters["separate_files"] = False
-        if "draw_fov_labels" not in self.parameters:
-            self.parameters["draw_fov_labels"] = False
+        self.set_default_parameters({
+            "microns_per_pixel": 3,
+            "fov_crop_width": 0,
+            "separate_files": False,
+            "draw_fov_labels": False
+        })
 
         if self.parameters["microns_per_pixel"] == "full_resolution":
             self.mosaicMicronsPerPixel = self.dataSet.get_microns_per_pixel()

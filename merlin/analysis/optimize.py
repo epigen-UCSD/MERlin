@@ -25,19 +25,14 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
         self.add_dependencies("preprocess_task", "warp_task")
         self.add_dependencies("previous_iteration", optional=True)
-
-        if "fov_per_iteration" not in self.parameters:
-            self.parameters["fov_per_iteration"] = 50
-        if "area_threshold" not in self.parameters:
-            self.parameters["area_threshold"] = 5
-        if "optimize_background" not in self.parameters:
-            self.parameters["optimize_background"] = False
-        if "optimize_chromatic_correction" not in self.parameters:
-            self.parameters["optimize_chromatic_correction"] = False
-        if "crop_width" not in self.parameters:
-            self.parameters["crop_width"] = 0
-        if "n_jobs" not in self.parameters:
-            self.parameters["n_jobs"] = 1
+        self.set_default_parameters({
+            "fov_per_iteration": 50,
+            "area_threshold": 5,
+            "optimize_background": False,
+            "optimize_chromatic_correction": False,
+            "crop_width": 0,
+            "n_jobs": 1
+        })
 
         if "fov_index" in self.parameters:
             logger = self.dataSet.get_logger(self)

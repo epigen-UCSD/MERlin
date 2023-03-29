@@ -19,12 +19,12 @@ class Warp(analysistask.AnalysisTask):
     """
 
     def __init__(self, dataSet, parameters=None, analysisName=None):
-        super().__init__(dataSet, parameters, analysisName, paralell=True)
+        super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-        if "write_fiducial_images" not in self.parameters:
-            self.parameters["write_fiducial_images"] = False
-        if "write_aligned_images" not in self.parameters:
-            self.parameters["write_aligned_images"] = False
+        self.set_default_parameters({
+            "write_fiducial_images": False,
+            "write_aligned_images": False
+        })
 
         self.writeAlignedFiducialImages = self.parameters["write_fiducial_images"]
 
@@ -155,10 +155,10 @@ class FiducialCorrelationWarp(Warp):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        if "highpass_sigma" not in self.parameters:
-            self.parameters["highpass_sigma"] = 3
-        if "reference_round" not in self.parameters:
-            self.parameters["reference_round"] = 0
+        self.set_default_parameters({
+            "highpass_sigma": 3,
+            "reference_round": 0
+        })
 
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         highPassSigma = self.parameters["highpass_sigma"]
@@ -189,22 +189,16 @@ class FiducialBeadWarp(Warp):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        if "delta" not in self.parameters:
-            self.parameters["delta"] = 2
-        if "delta_fit" not in self.parameters:
-            self.parameters["delta_fit"] = 3
-        if "dbscan" not in self.parameters:
-            self.parameters["dbscan"] = True
-        if "max_disp" not in self.parameters:
-            self.parameters["max_disp"] = 200
-        if "tile_size" not in self.parameters:
-            self.parameters["tile_size"] = 512
-        if "filter_size" not in self.parameters:
-            self.parameters["filter_size"] = 15
-        if "threshold_sigma" not in self.parameters:
-            self.parameters["threshold_sigma"] = 4
-        if "reference_round" not in self.parameters:
-            self.parameters["reference_round"] = 0
+        self.set_default_parameters({
+            "delta": 2,
+            "delta_fit": 3,
+            "dbscan": True,
+            "max_disp": 200,
+            "tile_size": 512,
+            "filter_size": 15,
+            "threshold_sigma": 4,
+            "reference_round": 0
+        })
 
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         im = inputImage.astype(np.float32)
@@ -362,14 +356,12 @@ class FiducialAlign(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName, parallel=True)
 
-        if "sz_norm" not in self.parameters:
-            self.parameters["sz_norm"] = 20
-        if "sz" not in self.parameters:
-            self.parameters["sz"] = 500
-        if "nelems" not in self.parameters:
-            self.parameters["nelems"] = 7
-        if "reference_round" not in self.parameters:
-            self.parameters["reference_round"] = 0
+        self.set_default_parameters({
+            "sz_norm": 20,
+            "sz": 500,
+            "nelems": 7,
+            "reference_round": 0
+        })
 
     def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.

@@ -44,30 +44,19 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("preprocess_task", "optimize_task", "global_align_task")
-
-        if "crop_width" not in self.parameters:
-            self.parameters["crop_width"] = 100
-        if "write_decoded_images" not in self.parameters:
-            self.parameters["write_decoded_images"] = True
-        if "minimum_area" not in self.parameters:
-            self.parameters["minimum_area"] = 0
-        if "distance_threshold" not in self.parameters:
-            self.parameters["distance_threshold"] = 0.5167
-        if "lowpass_sigma" not in self.parameters:
-            self.parameters["lowpass_sigma"] = 1
-        if "decode_3d" not in self.parameters:
-            self.parameters["decode_3d"] = False
-        if "memory_map" not in self.parameters:
-            self.parameters["memory_map"] = False
-        if "remove_z_duplicated_barcodes" not in self.parameters:
-            self.parameters["remove_z_duplicated_barcodes"] = False
-        if self.parameters["remove_z_duplicated_barcodes"]:
-            if "z_duplicate_zPlane_threshold" not in self.parameters:
-                self.parameters["z_duplicate_zPlane_threshold"] = 1
-            if "z_duplicate_xy_pixel_threshold" not in self.parameters:
-                self.parameters["z_duplicate_xy_pixel_threshold"] = np.sqrt(2)
-        if "n_jobs" not in self.parameters:
-            self.parameters["n_jobs"] = 1
+        self.set_default_parameters({
+            "crop_width": 100,
+            "write_decoded_images": True,
+            "minimum_area": 0,
+            "distance_threshold": 0.5167,
+            "lowpass_sigma": 1,
+            "decode_3d": False,
+            "memory_map": False,
+            "remove_z_duplicated_barcodes": False,
+            "z_duplicate_zPlane_threshold": 1,
+            "z_duplicate_xy_pixel_threshold": np.sqrt(2),
+            "n_jobs": 1
+        })
 
         self.cropWidth = self.parameters["crop_width"]
         self.imageSize = dataSet.get_image_dimensions()

@@ -21,13 +21,11 @@ class SumSignal(analysistask.AnalysisTask):
         super().__init__(dataSet, parameters, analysisName, parallel=True)
 
         self.add_dependencies("warp_task", "segment_task", "global_align_task")
-
-        if "apply_highpass" not in self.parameters:
-            self.parameters["apply_highpass"] = False
-        if "highpass_sigma" not in self.parameters:
-            self.parameters["highpass_sigma"] = 5
-        if "z_index" not in self.parameters:
-            self.parameters["z_index"] = 0
+        self.set_default_parameters({
+            "apply_highpass": False,
+            "highpass_sigma": 5,
+            "z_index": 0
+        })
 
         if self.parameters["z_index"] >= len(self.dataSet.get_z_positions()):
             raise analysistask.InvalidParameterError(

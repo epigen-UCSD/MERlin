@@ -29,13 +29,11 @@ class FilterBarcodes(AbstractFilterBarcodes):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("decode_task")
-
-        if "area_threshold" not in self.parameters:
-            self.parameters["area_threshold"] = 3
-        if "intensity_threshold" not in self.parameters:
-            self.parameters["intensity_threshold"] = 200
-        if "distance_threshold" not in self.parameters:
-            self.parameters["distance_threshold"] = 1e6
+        self.set_default_parameters({
+            "area_threshold": 3,
+            "intensity_threshold": 200,
+            "distance_threshold": 1e6
+        })
 
     def run_analysis(self, fragment):
         areaThreshold = self.parameters["area_threshold"]
@@ -61,9 +59,9 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("run_after_task")
-
-        if "tolerance" not in self.parameters:
-            self.parameters["tolerance"] = 0.001
+        self.set_default_parameters({
+            "tolerance": 0.001
+        })
 
         self.decode_task = self.dataSet.load_analysis_task(self.parameters["decode_task"])
 
@@ -289,9 +287,9 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("adaptive_task", "decode_task")
-
-        if "misidentification_rate" not in self.parameters:
-            self.parameters["misidentification_rate"] = 0.05
+        self.set_default_parameters({
+            "misidentification_rate": 0.05
+        })
 
     def get_adaptive_thresholds(self):
         """Get the adaptive thresholds used for filtering barcodes.

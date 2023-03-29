@@ -16,8 +16,9 @@ class PlotPerformance(analysistask.AnalysisTask):
     def __init__(self, dataSet, parameters=None, analysisName=None):
         super().__init__(dataSet, parameters, analysisName)
 
-        if "exclude_plots" in self.parameters:
-            self.parameters["exclude_plots"] = []
+        self.set_default_parameters({
+            "exclude_plots": []
+        })
 
         self.taskTypes = [
             "warp_task",

@@ -84,6 +84,11 @@ class AnalysisTask:
         else:
             self.dependencies.update(args)
 
+    def set_default_parameters(self, defaults: dict[str, Any]) -> None:
+        for key, value in defaults.items():
+            if key not in self.parameters:
+                self.parameters[key] = value
+
     @property
     def fragment_list(self) -> list[str]:
         """Get the list of fragments (FOVs) this task is run on.

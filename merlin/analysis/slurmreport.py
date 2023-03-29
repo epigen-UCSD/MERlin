@@ -24,9 +24,9 @@ class SlurmReport(analysistask.AnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("run_after_task")
-
-        if "codebook_index" not in self.parameters:
-            self.parameters["codebook_index"] = 0
+        self.set_default_parameters({
+            "codebook_index": 0
+        })
 
     def _generate_slurm_report(self, task: analysistask.AnalysisTask):
         if isinstance(task, analysistask.ParallelAnalysisTask):

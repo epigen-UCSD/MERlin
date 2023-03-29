@@ -12,11 +12,10 @@ class ExportBarcodes(analysistask.AnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("filter_task")
-
-        if "columns" not in self.parameters:
-            self.parameters["columns"] = ["barcode_id", "global_x", "global_y", "cell_index"]
-        if "exclude_blanks" not in self.parameters:
-            self.parameters["exclude_blanks"] = True
+        self.set_default_parameters({
+            "columns": ["barcode_id", "global_x", "global_y", "cell_index"],
+            "exclude_blanks": True
+        })
 
         self.columns = self.parameters["columns"]
         self.excludeBlanks = self.parameters["exclude_blanks"]

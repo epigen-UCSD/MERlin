@@ -56,11 +56,10 @@ class WatershedSegment(FeatureSavingAnalysisTask):
         super().__init__(dataSet, parameters, analysisName)
 
         self.add_dependencies("warp_task", "global_align_task")
-
-        if "seed_channel_name" not in self.parameters:
-            self.parameters["seed_channel_name"] = "DAPI"
-        if "watershed_channel_name" not in self.parameters:
-            self.parameters["watershed_channel_name"] = "polyT"
+        self.set_default_parameters({
+            "seed_channel_name": "DAPI",
+            "watershed_channel_name": "polyT"
+        })
 
     def get_cell_boundaries(self) -> List[spatialfeature.SpatialFeature]:
         featureDB = self.get_feature_database()
@@ -224,25 +223,17 @@ class CellposeSegment(analysistask.AnalysisTask):
 
         self.add_dependencies("global_align_task")
         self.add_dependencies("flat_field_task", optional=True)
-
-        if "channel" not in self.parameters:
-            self.parameters["channel"] = "DAPI"
-        if "z_pos" not in self.parameters:
-            self.parameters["z_pos"] = None
-        if "diameter" not in self.parameters:
-            self.parameters["diameter"] = None
-        if "cellprob_threshold" not in self.parameters:
-            self.parameters["cellprob_threshold"] = None
-        if "flow_threshold" not in self.parameters:
-            self.parameters["flow_threshold"] = None
-        if "minimum_size" not in self.parameters:
-            self.parameters["minimum_size"] = None
-        if "dilate_cells" not in self.parameters:
-            self.parameters["dilate_cells"] = None
-        if "downscale_xy" not in self.parameters:
-            self.parameters["downscale_xy"] = 1
-        if "downscale_z" not in self.parameters:
-            self.parameters["downscale_z"] = 1
+        self.set_default_parameters({
+            "channel": "DAPI",
+            "z_pos": None,
+            "diameter": None,
+            "cellprob_threshold": None,
+            "flow_threshold": None,
+            "minimum_size": None,
+            "dilate_cells": None,
+            "downscale_xy": 1,
+            "downscale_z": 1
+        })
 
         self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
 
