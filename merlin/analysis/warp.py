@@ -363,6 +363,8 @@ class FiducialAlign(analysistask.AnalysisTask):
             "reference_round": 0
         })
 
+        self.define_results("drifts", "tile_drifts")
+
     def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.
 
@@ -419,9 +421,7 @@ class FiducialAlign(analysistask.AnalysisTask):
 
     def get_transformation(self, fov: str, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
-        drifts = self.dataSet.load_numpy_analysis_result(
-            "drifts", self.analysis_name, resultIndex=fov, subdirectory="drifts"
-        )
+        drifts = self.load_result("drifts", fov)
         if channel is None:
             return drifts
         return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - 1]
@@ -476,9 +476,5 @@ class FiducialAlign(analysistask.AnalysisTask):
             txyz, txyzs = self.get_txyz(moving_image)
             drifts.append(txyz)
             tile_drifts.append(txyzs)
-        self.dataSet.save_numpy_analysis_result(
-            np.array(drifts), "drifts", self.analysis_name, resultIndex=fragment, subdirectory="drifts"
-        )
-        self.dataSet.save_numpy_analysis_result(
-            np.array(tile_drifts), "tile_drifts", self.analysis_name, resultIndex=fragment, subdirectory="drifts"
-        )
+        self.drifts = np.array(drifts)
+        self.tile_drifts = np.array(tile_drifts)

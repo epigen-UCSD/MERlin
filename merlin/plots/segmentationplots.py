@@ -74,7 +74,7 @@ class CellposeBoundaryPlot(AbstractPlot):
         self.segment_task = kwargs["tasks"]["segment_task"]
         self.dataset = self.segment_task.dataSet
         output_task = kwargs["tasks"]["output_task"]
-        metadata = output_task.get_cell_metadata_table()
+        metadata = output_task.load_result("cell_metadata")
         metadata["fov"] = [cell_id.split("__")[0] for cell_id in metadata.index]
 
         fig, ax = plt.subplots(3, 2, figsize=(8, 12), dpi=300)
@@ -103,7 +103,7 @@ class CellVolumeHistogramPlot(AbstractPlot):
 
     def create_plot(self, **kwargs) -> plt.Figure:
         output_task = kwargs["tasks"]["output_task"]
-        metadata = output_task.get_cell_metadata_table()
+        metadata = output_task.load_result("cell_metadata")
         fig = tools.plot_histogram(metadata, "volume")
         plt.xlabel("Cell volume (pixels)")
         return fig

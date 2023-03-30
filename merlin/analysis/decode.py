@@ -228,6 +228,8 @@ class SpotDecode(analysistask.AnalysisTask):
 
         self.add_dependencies("warp_task")
 
+        self.define_results("fits")
+
     def norm_image(self, im, s=50):
         im_ = im.astype(np.float32)
         return np.array([im__ - cv2.blur(im__, (s, s)) for im__ in im_], dtype=np.float32)
@@ -509,9 +511,7 @@ class SpotDecode(analysistask.AnalysisTask):
             fits = np.concatenate([fits, np.array([[color_index, bit_index]] * len(fits))], axis=-1)
             result.append(fits)
         fits = np.concatenate(result)
-        self.dataSet.save_numpy_analysis_result(
-            fits, "fits", self.analysis_name, resultIndex=fragment, subdirectory="fits"
-        )
+        self.fits = fits
         for bit in np.unique(fits[:, -1]):
             drifts = self.warp_task.get_transformation(fragment, int(bit))
             if len(drifts) == 3:

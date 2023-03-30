@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from merlin.core import analysistask
 
 
@@ -14,19 +12,18 @@ class ExportBarcodes(analysistask.AnalysisTask):
         super().setup(parallel=False)
 
         self.add_dependencies("filter_task")
-        self.set_default_parameters({
-            "columns": ["barcode_id", "global_x", "global_y", "cell_index"],
-            "exclude_blanks": True
-        })
+        self.set_default_parameters(
+            {"columns": ["barcode_id", "global_x", "global_y", "cell_index"], "exclude_blanks": True}
+        )
+
+        self.define_results(("barcodes", {"index": False}))
 
         self.columns = self.parameters["columns"]
         self.excludeBlanks = self.parameters["exclude_blanks"]
 
     def run_analysis(self):
-        barcodeData = self.filter_task.get_barcode_database().get_barcodes(columnList=self.columns)
+        self.barcodes = self.filter_task.get_barcode_database().get_barcodes(columnList=self.columns)
 
         if self.excludeBlanks:
             codebook = self.filter_task.get_codebook()
-            barcodeData = barcodeData[barcodeData["barcode_id"].isin(codebook.get_coding_indexes())]
-
-        self.dataSet.save_dataframe_to_csv(barcodeData, "barcodes", self, index=False)
+            self.barcodes = self.barcodes[self.barcodes["barcode_id"].isin(codebook.get_coding_indexes())]

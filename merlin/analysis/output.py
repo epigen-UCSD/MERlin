@@ -1,7 +1,6 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import scanpy as sc
-from pathlib import Path
 
 from merlin.core import analysistask
 
@@ -12,9 +11,19 @@ class FinalOutput(analysistask.AnalysisTask):
 
         self.add_dependencies("partition_task", "segment_task", "link_cell_task")
 
+        self.define_results(
+            ("cell_metadata", {"index": True}),
+            ("detected_transcripts", {"index": False}),
+            ("cell_by_gene", {"index": True}),
+            "scanpy_object"
+        )
+
     def _combine_overlap_volumes(self):
         volumes = pd.concat(
-            [self.link_cell_task.get_overlap_volumes(overlapName) for overlapName in self.dataSet.get_overlap_names()]
+            [
+                self.link_cell_task.load_result("overlap_volume", overlapName)
+                for overlapName in self.dataSet.get_overlap_names()
+            ]
         )
         return volumes.groupby("label").max()
 
@@ -23,7 +32,7 @@ class FinalOutput(analysistask.AnalysisTask):
 
     def get_cell_metadata_table(self):
         try:
-            return self.dataSet.load_dataframe_from_csv("cell_metadata", self.analysis_name, index_col=0)
+            self.cell_metadata = self.dataSet.load_dataframe_from_csv("cell_metadata", self.analysis_name, index_col=0)
         except FileNotFoundError:
             dfs = []
             cell_mapping = self.link_cell_task.get_cell_mapping()
@@ -45,8 +54,7 @@ class FinalOutput(analysistask.AnalysisTask):
             )
             metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
             metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
-            self.dataSet.save_dataframe_to_csv(metadata, "cell_metadata", self.analysis_name)
-            return metadata
+            self.cell_metadata = metadata
 
     def run_analysis(self):
         cell_mapping = self.link_cell_task.get_cell_mapping()
@@ -55,21 +63,21 @@ class FinalOutput(analysistask.AnalysisTask):
         barcodes["cell_id"] = [
             cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in barcodes["cell_id"]
         ]
-        self.dataSet.save_dataframe_to_csv(barcodes, "detected_transcripts", self, index=False)
+        self.detected_transcripts = barcodes
 
         matrix = self.partition_task.get_cell_by_gene_matrix()
         matrix.index = [cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in matrix.index]
         matrix = matrix.reset_index().groupby("index").sum()
         matrix.index.name = None
-        self.dataSet.save_dataframe_to_csv(matrix, "cell_by_gene", self)
+        self.cell_by_gene = matrix
 
-        celldata = self.get_cell_metadata_table()
+        self.get_cell_metadata_table()
         blank_cols = np.array(["notarget" in col or "blank" in col.lower() for col in matrix])
         adata = sc.AnnData(matrix.loc[:, ~blank_cols], dtype=np.uint32)
         adata.obsm["X_blanks"] = matrix.loc[:, blank_cols].to_numpy()
         adata.uns["blank_names"] = matrix.columns[blank_cols].to_list()
-        adata.obsm["X_spatial"] = np.array(celldata[["global_x", "global_y"]].reindex(index=adata.obs.index))
-        adata.obs["volume"] = celldata["volume"]
+        adata.obsm["X_spatial"] = np.array(self.cell_metadata[["global_x", "global_y"]].reindex(index=adata.obs.index))
+        adata.obs["volume"] = self.cell_metadata["volume"]
         adata.obs["fov"] = [cell_id.split("__")[0] for cell_id in adata.obs.index]
         adata.layers["counts"] = adata.X
         sc.pp.calculate_qc_metrics(adata, percent_top=None, inplace=True)
@@ -78,4 +86,4 @@ class FinalOutput(analysistask.AnalysisTask):
         sc.pp.neighbors(adata, n_neighbors=30, use_rep="X", metric="cosine")
         sc.tl.leiden(adata)
         sc.tl.umap(adata, min_dist=0.3)
-        self.dataSet.save_scanpy_analysis_result(adata, "scanpy_object", self)
+        self.scanpy_object = adata

@@ -3,11 +3,16 @@ import cProfile
 import io
 import json
 import os
+import pickle
 import pstats
 import threading
 import time
 from pathlib import Path
 from typing import Any
+
+import numpy as np
+import pandas as pd
+import scanpy as sc
 
 import merlin
 
@@ -22,6 +27,10 @@ class AnalysisAlreadyExistsError(Exception):
 
 class InvalidParameterError(Exception):
     """Analysis parameters are invalid."""
+
+
+class ResultNotFoundError(Exception):
+    """The analysis result is not found."""
 
 
 class AnalysisTask:
@@ -68,11 +77,12 @@ class AnalysisTask:
         if "codebookNum" in self.parameters:
             self.codebookNum = self.parameters["codebookNum"]
 
-        self.setup()
+        self.setup()  # Will give an error if setup() isn't implemented in a subclass, this is intentional.
 
     def setup(self, *, parallel: bool) -> None:
         self._fragment_list = self.dataSet.get_fovs() if parallel else []
         self.dependencies = set()
+        self.results = {}
 
     def __getattr__(self, attr):
         """Check if an unloaded dependency is being accessed and load it."""
@@ -92,6 +102,17 @@ class AnalysisTask:
             self.dependencies.update(task for task in args if task in self.parameters)
         else:
             self.dependencies.update(args)
+
+    def define_results(self, *metadata) -> None:
+        for result in metadata:
+            if isinstance(result, str):
+                result_name = result
+                kwargs = {}
+            elif isinstance(result, tuple):
+                result_name, kwargs = result
+            self.results[result_name] = kwargs
+            if self.is_parallel():
+                Path(self.path, result_name).mkdir(parents=True, exist_ok=True)
 
     def set_default_parameters(self, defaults: dict[str, Any]) -> None:
         for key, value in defaults.items():
@@ -157,7 +178,7 @@ class AnalysisTask:
                 if overwrite:
                     self.reset_analysis(fragment)
 
-                if self.is_complete(fragment) or self.is_error(fragment):
+                if self.is_complete(fragment):
                     raise AnalysisAlreadyStartedError(
                         f"Unable to run {self.analysis_name} fragment {fragment} since it has already run"
                     )
@@ -170,8 +191,10 @@ class AnalysisTask:
                     profiler.enable()
                 if fragment:
                     self.run_analysis(fragment=fragment)
+                    self.save_results(fragment)
                 else:
                     self.run_analysis()
+                    self.save_results()
                 if self.dataSet.profile:
                     profiler.disable()
                     stat_string = io.StringIO()
@@ -311,3 +334,47 @@ class AnalysisTask:
     def is_parallel(self) -> bool:
         """Determine if this analysis task uses multiple cores."""
         return len(self.fragment_list) > 0
+
+    def result_path(self, result_name: str, extension: str, fragment: str = "") -> Path:
+        if fragment:
+            return self.path / result_name / f"{result_name}_{fragment}{extension}"
+        return self.path / f"{result_name}{extension}"
+
+    def save_results(self, fragment: str = "") -> None:
+        for result_name in self.results:
+            self.save_result(result_name, fragment)
+
+    def save_result(self, result_name: str, fragment: str = "") -> None:
+        if not hasattr(self, result_name):
+            raise ResultNotFoundError(result_name)
+        result = getattr(self, result_name)
+        if isinstance(result, np.ndarray):
+            np.save(self.result_path(result_name, ".npy", fragment), result)
+        elif isinstance(result, pd.DataFrame):
+            result.to_csv(self.result_path(result_name, ".csv", fragment), **self.results[result_name])
+        elif isinstance(result, sc.AnnData):
+            result.write(self.result_path(result_name, ".h5ad", fragment))
+        else:
+            with self.result_path(result_name, ".pkl", fragment).open("wb") as f:
+                pickle.dump(result, f)
+
+    def load_result(self, result_name: str, fragment: str = "") -> Any:
+        if fragment:
+            files = list(Path(self.path, result_name).glob(f"{result_name}_{fragment}.*"))
+        else:
+            files = list(self.path.glob(f"{result_name}.*"))
+        filename = files[0]
+        if filename.suffix == ".npy":
+            return np.load(filename, allow_pickle=True)
+        if filename.suffix == ".csv":
+            if "index" not in self.results[result_name] or not self.results[result_name]["index"]:
+                index_col = None
+            else:
+                index_col = 0
+            return pd.read_csv(filename, index_col=index_col)
+        if filename.suffix == ".h5ad":
+            return sc.read(filename)
+        if filename.suffix == ".pkl":
+            with filename.open("rb") as f:
+                return pickle.load(f)
+        raise ResultNotFoundError(f"Unsupported format of {filename}")

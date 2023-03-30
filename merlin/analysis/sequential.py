@@ -21,11 +21,9 @@ class SumSignal(analysistask.AnalysisTask):
         super().setup(parallel=True)
 
         self.add_dependencies("warp_task", "segment_task", "global_align_task")
-        self.set_default_parameters({
-            "apply_highpass": False,
-            "highpass_sigma": 5,
-            "z_index": 0
-        })
+        self.set_default_parameters({"apply_highpass": False, "highpass_sigma": 5, "z_index": 0})
+
+        self.define_results("sequential_signal")
 
         if self.parameters["z_index"] >= len(self.dataSet.get_z_positions()):
             raise analysistask.InvalidParameterError(
@@ -108,10 +106,7 @@ class SumSignal(analysistask.AnalysisTask):
         fovSignal = self._get_sum_signal(fragmentIndex, channels, zIndex)
         normSignal = fovSignal.iloc[:, :-1].div(fovSignal.loc[:, "Pixels"], 0)
         normSignal.columns = geneNames
-
-        self.dataSet.save_dataframe_to_csv(
-            normSignal, "sequential_signal", self.analysis_name, fragmentIndex, "signals"
-        )
+        self.sequential_signal = normSignal
 
 
 class ExportSumSignals(analysistask.AnalysisTask):
@@ -120,7 +115,7 @@ class ExportSumSignals(analysistask.AnalysisTask):
 
         self.add_dependencies("sequential_task")
 
-    def run_analysis(self):
-        signals = self.sequential_task.get_sum_signals()
+        self.define_results("sequential_sum_signals")
 
-        self.dataSet.save_dataframe_to_csv(signals, "sequential_sum_signals", self.analysis_name)
+    def run_analysis(self):
+        self.sequential_sum_signals = self.sequential_task.get_sum_signals()

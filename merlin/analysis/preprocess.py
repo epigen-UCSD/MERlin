@@ -40,12 +40,9 @@ class DeconvolutionPreprocess(Preprocess):
         super().setup(parallel=True)
 
         self.add_dependencies("warp_task")
-        self.set_default_parameters({
-            "highpass_sigma": 3,
-            "decon_sigma": 2,
-            "decon_iterations": 20,
-            "codebook_index": 0
-        })
+        self.set_default_parameters(
+            {"highpass_sigma": 3, "decon_sigma": 2, "decon_iterations": 20, "codebook_index": 0}
+        )
 
         if "decon_filter_size" not in self.parameters:
             self.parameters["decon_filter_size"] = int(2 * np.ceil(2 * self.parameters["decon_sigma"]) + 1)
@@ -133,7 +130,7 @@ class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
         # self.parameters as 'decon_iterations' is added to
         # self.parameters by the super-class with a default value
         # of 20, but we want the default value to be 2.
-        #if "decon_iterations" not in parameters:
+        # if "decon_iterations" not in parameters:
         #    self.parameters["decon_iterations"] = 2
 
         self._deconIterations = self.parameters["decon_iterations"]
@@ -152,9 +149,11 @@ class FlatFieldPreprocess(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
+        self.define_results(f"mean_image_{self.parameters['channel']}")
+
     @cached_property
     def mean_image(self):
-        return self.dataSet.load_numpy_analysis_result(f"mean_image_{self.parameters['channel']}", self)
+        return self.load_result(f"mean_image_{self.parameters['channel']}")
 
     def process_image(self, image):
         return image / self.mean_image
@@ -165,4 +164,4 @@ class FlatFieldPreprocess(analysistask.AnalysisTask):
             sum_image += self.dataSet.get_raw_image(
                 self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"]), fov, 10
             )  # TODO: remove hard-coded zindex
-        self.dataSet.save_numpy_analysis_result(sum_image, f"mean_image_{self.parameters['channel']}", self)
+        setattr(self, f"mean_image_{self.parameters['channel']}", sum_image)

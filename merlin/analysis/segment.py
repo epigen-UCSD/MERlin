@@ -53,10 +53,7 @@ class WatershedSegment(FeatureSavingAnalysisTask):
         super().setup(parallel=True)
 
         self.add_dependencies("warp_task", "global_align_task")
-        self.set_default_parameters({
-            "seed_channel_name": "DAPI",
-            "watershed_channel_name": "polyT"
-        })
+        self.set_default_parameters({"seed_channel_name": "DAPI", "watershed_channel_name": "polyT"})
 
     def get_cell_boundaries(self) -> List[spatialfeature.SpatialFeature]:
         featureDB = self.get_feature_database()
@@ -164,6 +161,8 @@ class CombineCleanedBoundaries(analysistask.AnalysisTask):
 
         self.add_dependencies("cleaning_task")
 
+        self.define_results("all_cleaned_cells")
+
     def return_exported_data(self):
         kwargs = {"index_col": 0}
         return self.dataSet.load_dataframe_from_csv("all_cleaned_cells", analysisTask=self.analysis_name, **kwargs)
@@ -177,7 +176,7 @@ class CombineCleanedBoundaries(analysistask.AnalysisTask):
 
         cleanedCells = spatialfeature.remove_overlapping_cells(graph)
 
-        self.dataSet.save_dataframe_to_csv(cleanedCells, "all_cleaned_cells", analysisTask=self)
+        self.all_cleaned_cells = cleanedCells
 
 
 class RefineCellDatabases(FeatureSavingAnalysisTask):
@@ -208,10 +207,10 @@ class ExportCellMetadata(analysistask.AnalysisTask):
 
         self.add_dependencies("segment_task")
 
-    def run_analysis(self):
-        df = self.segment_task.get_feature_database().read_feature_metadata()
+        self.define_results("feature_metadata")
 
-        self.dataSet.save_dataframe_to_csv(df, "feature_metadata", self.analysis_name)
+    def run_analysis(self):
+        self.feature_metadata = self.segment_task.get_feature_database().read_feature_metadata()
 
 
 class CellposeSegment(analysistask.AnalysisTask):
@@ -220,24 +219,27 @@ class CellposeSegment(analysistask.AnalysisTask):
 
         self.add_dependencies("global_align_task")
         self.add_dependencies("flat_field_task", optional=True)
-        self.set_default_parameters({
-            "channel": "DAPI",
-            "z_pos": None,
-            "diameter": None,
-            "cellprob_threshold": None,
-            "flow_threshold": None,
-            "minimum_size": None,
-            "dilate_cells": None,
-            "downscale_xy": 1,
-            "downscale_z": 1
-        })
+
+        self.set_default_parameters(
+            {
+                "channel": "DAPI",
+                "z_pos": None,
+                "diameter": None,
+                "cellprob_threshold": None,
+                "flow_threshold": None,
+                "minimum_size": None,
+                "dilate_cells": None,
+                "downscale_xy": 1,
+                "downscale_z": 1,
+            }
+        )
+
+        self.define_results("mask", ("metadata", {"index": False}))
 
         self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
 
     def load_mask(self, fragment):
-        mask = self.dataSet.load_numpy_analysis_result(
-            "mask", self.analysis_name, resultIndex=fragment, subdirectory="masks"
-        )
+        mask = self.load_result("mask", fragment)
         if mask.ndim == 3:
             shape = (
                 mask.shape[0] * self.parameters["downscale_z"],
@@ -257,9 +259,7 @@ class CellposeSegment(analysistask.AnalysisTask):
         return mask[x_int][:, y_int]
 
     def load_metadata(self, fragment):
-        return self.dataSet.load_dataframe_from_csv(
-            "metadata", self.analysis_name, fragment, subdirectory="metadata"
-        )
+        return self.dataSet.load_dataframe_from_csv("metadata", self.analysis_name, fragment, subdirectory="metadata")
 
     def load_image(self, fov, zIndex):
         image = self.dataSet.get_raw_image(self.channelIndex, fov, zIndex)
@@ -315,17 +315,8 @@ class CellposeSegment(analysistask.AnalysisTask):
         )
         metadata["global_x"] = global_x
         metadata["global_y"] = global_y
-        self.dataSet.save_numpy_analysis_result(
-            mask, "mask", self.analysis_name, resultIndex=fragment, subdirectory="masks"
-        )
-        self.dataSet.save_dataframe_to_csv(
-            metadata,
-            "metadata",
-            self.analysis_name,
-            resultIndex=fragment,
-            subdirectory="metadata",
-            index=False,
-        )
+        self.mask = mask
+        self.metadata = metadata
 
 
 class LinkCellsInOverlaps(analysistask.AnalysisTask):
@@ -333,6 +324,8 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         super().setup(parallel=True)
 
         self.add_dependencies("segment_task", "global_align_task")
+
+        self.define_results("overlap_volume", "paired_cells")
 
         self.fragment_list = self.dataSet.get_overlap_names()
 
@@ -371,14 +364,6 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
                     cell_links[cell] = name
             self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.analysis_name)
             return cell_links
-
-    def get_overlap_volumes(self, overlapName):
-        return self.dataSet.load_dataframe_from_csv(
-            "overlap_volume",
-            self.analysis_name,
-            resultIndex=overlapName,
-            subdirectory="volumes",
-        )
 
     def match_cells_in_overlap(self, strip_a: np.ndarray, strip_b: np.ndarray):
         """Find cells in overlapping regions of two FOVs that are the same cells.
@@ -431,17 +416,10 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
             strip_b = mask_b[:, b.xslice, b.yslice]
         newpairs = self.match_cells_in_overlap(strip_a, strip_b)
         pairs = {(a.fov + "__" + str(x[0]), b.fov + "__" + str(x[1])) for x in newpairs}
-        self.dataSet.save_pickle_analysis_result(
-            pairs, "paired_cells", self.analysis_name, resultIndex=fragment, subdirectory="paired_cells"
-        )
+        self.paired_cells = pairs
+
         dfa = pd.DataFrame(regionprops_table(strip_a, properties=["label", "area"]))
         dfa["label"] = a.fov + "__" + dfa["label"].astype(str)
         dfb = pd.DataFrame(regionprops_table(strip_b, properties=["label", "area"]))
         dfb["label"] = b.fov + "__" + dfb["label"].astype(str)
-        self.dataSet.save_dataframe_to_csv(
-            pd.concat([dfa, dfb]).set_index("label"),
-            "overlap_volume",
-            self.analysis_name,
-            resultIndex=fragment,
-            subdirectory="volumes",
-        )
+        self.overlap_volume = pd.concat([dfa, dfb]).set_index("label")

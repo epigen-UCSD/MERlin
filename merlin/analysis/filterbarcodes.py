@@ -31,11 +31,7 @@ class FilterBarcodes(AbstractFilterBarcodes):
         super().setup(parallel=True)
 
         self.add_dependencies("decode_task")
-        self.set_default_parameters({
-            "area_threshold": 3,
-            "intensity_threshold": 200,
-            "distance_threshold": 1e6
-        })
+        self.set_default_parameters({"area_threshold": 3, "intensity_threshold": 200, "distance_threshold": 1e6})
 
     def run_analysis(self, fragment):
         areaThreshold = self.parameters["area_threshold"]
@@ -61,9 +57,9 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         super().setup(parallel=False)
 
         self.add_dependencies("run_after_task")
-        self.set_default_parameters({
-            "tolerance": 0.001
-        })
+        self.set_default_parameters({"tolerance": 0.001})
+
+        self.define_results("blank_counts", "coding_counts", "area_bins", "distance_bins", "intensity_bins")
 
         self.decode_task = self.dataSet.load_analysis_task(self.parameters["decode_task"])
 
@@ -204,77 +200,81 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         codebook = self.decode_task.get_codebook()
         barcodeDB = self.decode_task.get_barcode_database()
 
-        completeFragments = self.dataSet.load_numpy_analysis_result_if_available(
+        self.complete_fragments = self.dataSet.load_numpy_analysis_result_if_available(
             "complete_fragments", self, [False] * len(self.dataSet.get_fovs())
         )
-        pendingFragments = [
-            self.decode_task.is_complete(fragmentName) and not completeFragments[i]
-            for i, fragmentName in enumerate(self.dataSet.get_fovs())
+        pending_fragments = [
+            self.decode_task.is_complete(fragment) and not self.complete_fragments[i]
+            for i, fragment in enumerate(self.dataSet.get_fovs())
         ]
 
-        areaBins = self.dataSet.load_numpy_analysis_result_if_available("area_bins", self, np.arange(1, 35))
-        distanceBins = self.dataSet.load_numpy_analysis_result_if_available(
+        self.area_bins = self.dataSet.load_numpy_analysis_result_if_available("area_bins", self, np.arange(1, 35))
+        self.distance_bins = self.dataSet.load_numpy_analysis_result_if_available(
             "distance_bins", self, np.arange(0, self.decode_task.parameters["distance_threshold"] + 0.02, 0.01)
         )
-        intensityBins = self.dataSet.load_numpy_analysis_result_if_available("intensity_bins", self, None)
+        self.intensity_bins = self.dataSet.load_numpy_analysis_result_if_available("intensity_bins", self, None)
 
-        blankCounts = self.dataSet.load_numpy_analysis_result_if_available("blank_counts", self, None)
-        codingCounts = self.dataSet.load_numpy_analysis_result_if_available("coding_counts", self, None)
+        self.blank_counts = self.dataSet.load_numpy_analysis_result_if_available("blank_counts", self, None)
+        self.coding_counts = self.dataSet.load_numpy_analysis_result_if_available("coding_counts", self, None)
 
-        self.dataSet.save_numpy_analysis_result(areaBins, "area_bins", self)
-        self.dataSet.save_numpy_analysis_result(distanceBins, "distance_bins", self)
+        self.save_result("area_bins")
+        self.save_result("distance_bins")
 
         updated = False
-        while not all(completeFragments):
-            if intensityBins is None or blankCounts is None or codingCounts is None:
-                for i, fragmentName in enumerate(self.dataSet.get_fovs()):
-                    if not pendingFragments[i] and self.decode_task.is_complete(fragmentName):
-                        pendingFragments[i] = self.decode_task.is_complete(fragmentName)
+        while not all(self.complete_fragments):
+            if self.intensity_bins is None or self.blank_counts is None or self.coding_counts is None:
+                for i, fragment in enumerate(self.dataSet.get_fovs()):
+                    if not pending_fragments[i] and self.decode_task.is_complete(fragment):
+                        pending_fragments[i] = self.decode_task.is_complete(fragment)
 
-                if np.sum(pendingFragments) >= min(20, len(self.dataSet.get_fovs())):
+                if np.sum(pending_fragments) >= min(20, len(self.dataSet.get_fovs())):
 
                     def extreme_values(inputData: pandas.Series):
                         return inputData.min(), inputData.max()
 
                     sampledFragments = np.random.choice(
-                        [self.dataSet.get_fovs()[i] for i, p in enumerate(pendingFragments) if p], size=20
+                        [self.dataSet.get_fovs()[i] for i, p in enumerate(pending_fragments) if p], size=20
                     )
                     intensityExtremes = [
                         extreme_values(barcodeDB.get_barcodes(i, columnList=["mean_intensity"])["mean_intensity"])
                         for i in sampledFragments
                     ]
                     maxIntensity = np.log10(np.max([x[1] for x in intensityExtremes]))
-                    intensityBins = np.arange(0, 2 * maxIntensity, maxIntensity / 100)
-                    self.dataSet.save_numpy_analysis_result(intensityBins, "intensity_bins", self)
+                    self.intensity_bins = np.arange(0, 2 * maxIntensity, maxIntensity / 100)
+                    self.save_result("intensity_bins")
 
-                    blankCounts = np.zeros((len(intensityBins) - 1, len(distanceBins) - 1, len(areaBins) - 1))
-                    codingCounts = np.zeros((len(intensityBins) - 1, len(distanceBins) - 1, len(areaBins) - 1))
+                    self.blank_counts = np.zeros(
+                        (len(self.intensity_bins) - 1, len(self.distance_bins) - 1, len(self.area_bins) - 1)
+                    )
+                    self.coding_counts = np.zeros(
+                        (len(self.intensity_bins) - 1, len(self.distance_bins) - 1, len(self.area_bins) - 1)
+                    )
 
             else:
-                for i, fragmentName in enumerate(self.dataSet.get_fovs()):
-                    if not completeFragments[i] and self.decode_task.is_complete(fragmentName):
+                for i, fragment in enumerate(self.dataSet.get_fovs()):
+                    if not self.complete_fragments[i] and self.decode_task.is_complete(fragment):
                         barcodes = barcodeDB.get_barcodes(
-                            fragmentName, columnList=["barcode_id", "mean_intensity", "min_distance", "area"]
+                            fragment, columnList=["barcode_id", "mean_intensity", "min_distance", "area"]
                         )
-                        blankCounts += self._extract_counts(
+                        self.blank_counts += self._extract_counts(
                             barcodes[barcodes["barcode_id"].isin(codebook.get_blank_indexes())],
-                            intensityBins,
-                            distanceBins,
-                            areaBins,
+                            self.intensity_bins,
+                            self.distance_bins,
+                            self.area_bins,
                         )
-                        codingCounts += self._extract_counts(
+                        self.coding_counts += self._extract_counts(
                             barcodes[barcodes["barcode_id"].isin(codebook.get_coding_indexes())],
-                            intensityBins,
-                            distanceBins,
-                            areaBins,
+                            self.intensity_bins,
+                            self.distance_bins,
+                            self.area_bins,
                         )
                         updated = True
-                        completeFragments[i] = True
+                        self.complete_fragments[i] = True
 
                 if updated:
-                    self.dataSet.save_numpy_analysis_result(completeFragments, "complete_fragments", self)
-                    self.dataSet.save_numpy_analysis_result(blankCounts, "blank_counts", self)
-                    self.dataSet.save_numpy_analysis_result(codingCounts, "coding_counts", self)
+                    self.save_result("complete_fragments")
+                    self.save_result("blank_counts")
+                    self.save_result("coding_counts")
 
 
 class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
@@ -289,9 +289,7 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
         super().setup(parallel=True)
 
         self.add_dependencies("adaptive_task", "decode_task")
-        self.set_default_parameters({
-            "misidentification_rate": 0.05
-        })
+        self.set_default_parameters({"misidentification_rate": 0.05})
 
     def get_adaptive_thresholds(self):
         """Get the adaptive thresholds used for filtering barcodes.
