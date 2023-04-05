@@ -118,7 +118,7 @@ def run_merlin() -> None:
 
     if not args.generate_only:
         if args.analysis_task:
-            task = dataset.load_analysis_task(args.analysis_task)
+            task = dataset.load_analysis_task(args.analysis_task, args.fragment_index)
             if args.check_done:
                 # checking completion creates the .done file for parallel tasks
                 # where completion has not yet been checked
@@ -127,7 +127,7 @@ def run_merlin() -> None:
                 else:
                     print(f"Task {args.analysis_task} is not complete")
             else:
-                task.run(args.fragment_index)
+                task.run()
         elif snakefile_path:
             snakemake_parameters = {}
             if args.snakemake_parameters:

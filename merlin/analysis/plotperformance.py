@@ -34,7 +34,7 @@ class PlotPerformance(analysistask.AnalysisTask):
 
     def run_analysis(self):
         taskDict = {
-            t: self.dataSet.load_analysis_task(self.parameters[t]) for t in self.taskTypes if t in self.parameters
+            t: self.dataSet.load_analysis_task(self.parameters[t], "") for t in self.taskTypes if t in self.parameters
         }
         plotEngine = plots.PlotEngine(self, taskDict)
         while not plotEngine.take_step():

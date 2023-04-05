@@ -75,11 +75,12 @@ class DriftCorrectionMetadata(PlotMetadata):
         self.register_updaters({"warp_task": self.process_update})
 
     def process_update(self, fragment):
-        drifts = self.warp_task.get_transformation(fragment)
+        self.warp_task.fragment = fragment
+        drifts = self.warp_task.get_transformation()
         columns = ["X drift", "Y drift"]
         if drifts.shape[1] == 3:
             columns = ["Z drift"] + columns
-        drifts = pd.DataFrame(self.warp_task.get_transformation(fragment), columns=columns)
+        drifts = pd.DataFrame(drifts, columns=columns)
         drifts["fov"] = fragment
         drifts = drifts.reset_index().rename(columns={"index": "Round"})
         drifts["Round"] += 1

@@ -62,7 +62,7 @@ class Warp(analysistask.AnalysisTask):
             a 2-dimensional numpy array containing the specified image
         """
         inputImage = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(zIndex))
-        transformation = self.get_transformation(fov, dataChannel)
+        transformation = self.get_transformation(dataChannel)
         if chromaticCorrector is not None:
             imageColor = self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
             return transform.warp(
@@ -400,10 +400,10 @@ class FiducialAlign(analysistask.AnalysisTask):
             a 2-dimensional numpy array containing the specified image
         """
         try:
-            zdrift, xdrift, ydrift = self.get_transformation(fov, channel)
+            zdrift, xdrift, ydrift = self.get_transformation(channel)
         except ValueError:  # Drift correction was not 3D
             zdrift = 0
-            xdrift, ydrift = self.get_transformation(fov, channel)
+            xdrift, ydrift = self.get_transformation(channel)
         try:
             input_image = self.dataSet.get_raw_image(
                 channel,
@@ -419,9 +419,9 @@ class FiducialAlign(analysistask.AnalysisTask):
         else:
             return ndimage.shift(input_image, [-xdrift, -ydrift], order=0)
 
-    def get_transformation(self, fov: str, channel: int = None) -> np.ndarray:
+    def get_transformation(self, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
-        drifts = self.load_result("drifts", fov)
+        drifts = self.load_result("drifts")
         if channel is None:
             return drifts
         return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - 1]
@@ -458,13 +458,13 @@ class FiducialAlign(analysistask.AnalysisTask):
         txyz = np.median(txyzs, 0).astype(int)
         return txyz, txyzs
 
-    def run_analysis(self, fragment: str) -> None:
+    def run_analysis(self) -> None:
         """
         Given two 3D images im_dapi0,im_dapi1, this normalizes them by subtracting local background
         and then computes correlations on <nelemes> blocks with highest  std of signal of size sz
         It will return median value and a list of single values.
         """
-        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragment)
+        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], self.fragment)
         fixed_image = self.norm_slice(fixed_image.astype(np.float32), self.parameters["sz_norm"])
         self.fixed_tiles = self.get_tiles(fixed_image, size=self.parameters["sz"])
         best = np.argsort([np.std(tile) for tile in self.fixed_tiles])[::-1]
@@ -472,7 +472,7 @@ class FiducialAlign(analysistask.AnalysisTask):
         drifts = []
         tile_drifts = []
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
-            moving_image = self.dataSet.get_fiducial_image(channel, fragment)
+            moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
             txyz, txyzs = self.get_txyz(moving_image)
             drifts.append(txyz)
             tile_drifts.append(txyzs)

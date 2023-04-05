@@ -9,7 +9,10 @@ from merlin.core import analysistask, dataset
 
 def expand_as_string(task: analysistask.AnalysisTask) -> str:
     """Generate the expand function for the output of a parallel analysis task."""
-    filename = task.status_file("done", "{g}")
+    task.fragment_list.append("{g}")
+    task.fragment = "{g}"
+    task.fragment_list.remove("{g}")
+    filename = task.status_file("done")
     return f"expand('{filename}', g={list(task.fragment_list)})"
 
 
@@ -36,11 +39,12 @@ def generate_output(
                 depends_all = True
         else:
             depends_all = True
-    return (
-        expand_as_string(task)
-        if depends_all
-        else f"'{task.status_file('done', '{i}')}'"
-    )
+    if depends_all:
+        return expand_as_string(task)
+    task.fragment_list.append("{i}")
+    task.fragment = "{i}"
+    task.fragment_list.remove("{i}")
+    return f"'{task.status_file('done')}'"
 
 
 def generate_input(task: analysistask.AnalysisTask) -> str:
@@ -104,7 +108,7 @@ class SnakefileGenerator:
             analysis_class = getattr(module, task_dict["task"])
             parameters = task_dict.get("parameters")
             name = task_dict.get("analysis_name")
-            task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name)
+            task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name, fragment="")
             if task.analysis_name in tasks:
                 raise Exception(
                     "Analysis tasks must have unique names. " + task.analysis_name + " is redundant."

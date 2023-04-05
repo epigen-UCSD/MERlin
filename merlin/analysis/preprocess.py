@@ -39,7 +39,7 @@ class DeconvolutionPreprocess(Preprocess):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("warp_task")
+        self.add_dependencies({"warp_task": ["drifts"]})
         self.set_default_parameters(
             {"highpass_sigma": 3, "decon_sigma": 2, "decon_iterations": 20, "codebook_index": 0}
         )
@@ -96,7 +96,7 @@ class DeconvolutionPreprocess(Preprocess):
         hpImage = imagefilters.high_pass_filter(inputImage, highPassFilterSize, self._highPassSigma)
         return hpImage.astype(np.float32)
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         histogramBins = np.arange(0, np.iinfo(np.uint16).max, 1)
         pixelHistogram = np.zeros((self.get_codebook().get_bit_count(), len(histogramBins) - 1))
 
@@ -105,12 +105,12 @@ class DeconvolutionPreprocess(Preprocess):
         for bi, b in enumerate(self.get_codebook().get_bit_names()):
             dataChannel = self.dataSet.get_data_organization().get_data_channel_for_bit(b)
             for i in range(len(self.dataSet.get_z_positions())):
-                inputImage = self.warp_task.get_aligned_image(fragment, dataChannel, i)
+                inputImage = self.warp_task.get_aligned_image(self.fragment, dataChannel, i)
                 deconvolvedImage = self._preprocess_image(inputImage)
 
                 pixelHistogram[bi, :] += np.histogram(deconvolvedImage, bins=histogramBins)[0]
 
-        self._save_pixel_histogram(pixelHistogram, fragment)
+        self._save_pixel_histogram(pixelHistogram, self.fragment)
 
     def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
         deconFilterSize = self.parameters["decon_filter_size"]

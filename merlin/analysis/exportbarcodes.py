@@ -11,7 +11,7 @@ class ExportBarcodes(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("filter_task")
+        self.add_dependencies({"filter_task": []})
         self.set_default_parameters(
             {"columns": ["barcode_id", "global_x", "global_y", "cell_index"], "exclude_blanks": True}
         )

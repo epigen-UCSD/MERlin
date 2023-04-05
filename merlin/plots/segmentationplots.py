@@ -48,7 +48,8 @@ class CellposeBoundaryPlot(AbstractPlot):
         self.formats = [".png"]
 
     def plot_mask(self, fov, ax) -> None:
-        mask = self.segment_task.load_mask(fov)
+        self.segment_task.fragment = fov
+        mask = self.segment_task.load_mask()
         channel = self.dataset.get_data_organization().get_data_channel_index(self.segment_task.parameters["channel"])
         if self.segment_task.parameters["z_pos"] is not None:
             z_index = self.dataset.position_to_z_index(self.segment_task.parameters["z_pos"])

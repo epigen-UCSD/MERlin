@@ -20,7 +20,7 @@ class GenerateMosaic(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("global_align_task", "warp_task")
+        self.add_dependencies({"global_align_task": [], "warp_task": ["drifts"]})
         self.set_default_parameters({
             "microns_per_pixel": 3,
             "fov_crop_width": 0,

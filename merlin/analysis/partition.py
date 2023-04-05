@@ -16,7 +16,7 @@ class PartitionBarcodes(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("filter_task", "assignment_task", "alignment_task")
+        self.add_dependencies({"filter_task": [], "assignment_task": [], "alignment_task": []})
 
         self.define_results(("counts_per_cell", {"index": True}))
 
@@ -83,7 +83,7 @@ class ExportPartitionedBarcodes(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("partition_task")
+        self.add_dependencies({"partition_task": []})
 
         self.define_results("barcodes_per_feature")
 
@@ -101,7 +101,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("segment_task", "filter_task")
+        self.add_dependencies({"segment_task": ["mask"], "filter_task": []})
 
         self.define_results(("barcodes", {"index": False}), "counts_per_cell")
 
@@ -133,22 +133,22 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
 
     def apply_mask(self, barcodes, mask):
         if mask.ndim == 2:
-            return mask[barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)]
+            return mask[barcodes["y"].round().astype(int), barcodes["x"].round().astype(int)]
         return mask[
-            barcodes["z"].round().astype(int), barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)
+            barcodes["z"].round().astype(int), barcodes["y"].round().astype(int), barcodes["x"].round().astype(int)
         ]
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         codebook = self.filter_task.get_codebook()
-        barcodes = self.filter_task.get_barcode_database().get_barcodes(fragment)
+        barcodes = self.filter_task.get_barcode_database().get_barcodes(self.fragment)
 
         # Trim barcodes in overlapping regions
-        overlap_mask = self.dataSet.get_overlap_mask(fragment, trim=True)
+        overlap_mask = self.dataSet.get_overlap_mask(self.fragment, trim=True)
         barcodes = barcodes[~self.apply_mask(barcodes, overlap_mask.astype(bool))]
 
-        cell_mask = self.segment_task.load_mask(fragment)
+        cell_mask = self.segment_task.load_mask()
         barcodes["cell_id"] = self.apply_mask(barcodes, cell_mask).astype(str)
-        barcodes["cell_id"] = fragment + "__" + barcodes["cell_id"]
+        barcodes["cell_id"] = self.fragment + "__" + barcodes["cell_id"]
 
         # Save barcode table
         barcodes["gene"] = [codebook.get_name_for_barcode_index(i) for i in barcodes["barcode_id"]]
@@ -156,7 +156,11 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
         self.barcodes = barcodes
 
         # Make cell by gene matrix
-        matrix = pd.crosstab(barcodes["cell_id"], barcodes["gene"]).drop(fragment + "__0")
+        matrix = pd.crosstab(barcodes["cell_id"], barcodes["gene"])
+        try:
+            matrix.drop(self.fragment + "__0")
+        except KeyError:
+            pass
         matrix.columns.name = None
         matrix.index.name = None
         self.counts_per_cell = matrix

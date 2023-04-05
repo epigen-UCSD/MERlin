@@ -234,7 +234,7 @@ class PlotMetadata:
         updated = False
         for task, completed in self.completed.items():
             for fragment, done in completed.items():
-                if not done and self.required_tasks[task].is_complete(fragment):
+                if not done and self.required_tasks[task].is_complete():
                     self.updaters[task](fragment)
                     self.completed[task][fragment] = True
                     updated = True

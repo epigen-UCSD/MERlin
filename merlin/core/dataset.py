@@ -599,7 +599,7 @@ class DataSet(object):
         saveName = self.get_task_subdirectory(analysisTask) / "task.json"
 
         try:
-            existingTask = self.load_analysis_task(analysisTask.analysis_name)
+            existingTask = self.load_analysis_task(analysisTask.analysis_name, fragment="")
 
             existingParameters = existingTask.parameters.copy()
             existingVersion = existingParameters["merlin_version"]
@@ -634,14 +634,14 @@ class DataSet(object):
         with saveName.open("w") as outFile:
             json.dump(analysisTask.parameters, outFile, indent=4)
 
-    def load_analysis_task(self, analysisTaskName: str) -> analysistask.AnalysisTask:
+    def load_analysis_task(self, analysisTaskName: str, fragment: str) -> analysistask.AnalysisTask:
         loadName = self.get_task_subdirectory(analysisTaskName) / "task.json"
 
         with loadName.open() as inFile:
             parameters: dict[str, str] = json.load(inFile)
             analysisModule = importlib.import_module(parameters["module"])
             analysisTask = getattr(analysisModule, parameters["class"])
-            return analysisTask(self, self.analysisPath, parameters, analysisTaskName)
+            return analysisTask(self, self.analysisPath, parameters, analysisTaskName, fragment)
 
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
         """

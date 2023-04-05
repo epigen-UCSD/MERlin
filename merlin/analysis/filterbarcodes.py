@@ -33,16 +33,16 @@ class FilterBarcodes(AbstractFilterBarcodes):
         self.add_dependencies("decode_task")
         self.set_default_parameters({"area_threshold": 3, "intensity_threshold": 200, "distance_threshold": 1e6})
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         areaThreshold = self.parameters["area_threshold"]
         intensityThreshold = self.parameters["intensity_threshold"]
         distanceThreshold = self.parameters["distance_threshold"]
         barcodeDB = self.get_barcode_database()
         barcodeDB.write_barcodes(
             self.decode_task.get_barcode_database().get_filtered_barcodes(
-                areaThreshold, intensityThreshold, distanceThreshold=distanceThreshold, fov=fragment
+                areaThreshold, intensityThreshold, distanceThreshold=distanceThreshold, fov=self.fragment
             ),
-            fov=fragment,
+            fov=self.fragment,
         )
 
 
@@ -56,12 +56,12 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("run_after_task")
+        self.add_dependencies({"run_after_task": []})
         self.set_default_parameters({"tolerance": 0.001})
 
         self.define_results("blank_counts", "coding_counts", "area_bins", "distance_bins", "intensity_bins")
 
-        self.decode_task = self.dataSet.load_analysis_task(self.parameters["decode_task"])
+        self.decode_task = self.dataSet.load_analysis_task(self.parameters["decode_task"], fragment="")
 
     def get_blank_count_histogram(self) -> np.ndarray:
         return self.dataSet.load_numpy_analysis_result("blank_counts", self)
@@ -204,7 +204,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
             "complete_fragments", self, [False] * len(self.dataSet.get_fovs())
         )
         pending_fragments = [
-            self.decode_task.is_complete(fragment) and not self.complete_fragments[i]
+            self.decode_task.is_complete() and not self.complete_fragments[i]
             for i, fragment in enumerate(self.dataSet.get_fovs())
         ]
 
@@ -224,8 +224,8 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         while not all(self.complete_fragments):
             if self.intensity_bins is None or self.blank_counts is None or self.coding_counts is None:
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
-                    if not pending_fragments[i] and self.decode_task.is_complete(fragment):
-                        pending_fragments[i] = self.decode_task.is_complete(fragment)
+                    if not pending_fragments[i] and self.decode_task.is_complete():
+                        pending_fragments[i] = self.decode_task.is_complete()
 
                 if np.sum(pending_fragments) >= min(20, len(self.dataSet.get_fovs())):
 
@@ -252,7 +252,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
             else:
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
-                    if not self.complete_fragments[i] and self.decode_task.is_complete(fragment):
+                    if not self.complete_fragments[i] and self.decode_task.is_complete():
                         barcodes = barcodeDB.get_barcodes(
                             fragment, columnList=["barcode_id", "mean_intensity", "min_distance", "area"]
                         )
@@ -288,7 +288,7 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("adaptive_task", "decode_task")
+        self.add_dependencies({"adaptive_task": [], "decode_task": []})
         self.set_default_parameters({"misidentification_rate": 0.05})
 
     def get_adaptive_thresholds(self):
@@ -299,14 +299,14 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
         """
         return self.adaptive_task
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         threshold = self.adaptive_task.calculate_threshold_for_misidentification_rate(
             self.parameters["misidentification_rate"]
         )
 
         bcDatabase = self.get_barcode_database()
-        currentBarcodes = self.decode_task.get_barcode_database().get_barcodes(fragment)
+        currentBarcodes = self.decode_task.get_barcode_database().get_barcodes(self.fragment)
 
         bcDatabase.write_barcodes(
-            self.adaptive_task.extract_barcodes_with_threshold(threshold, currentBarcodes), fov=fragment
+            self.adaptive_task.extract_barcodes_with_threshold(threshold, currentBarcodes), fov=self.fragment
         )

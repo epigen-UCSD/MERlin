@@ -9,7 +9,7 @@ class FinalOutput(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("partition_task", "segment_task", "link_cell_task")
+        self.add_dependencies({"partition_task": [], "segment_task": [], "link_cell_task": []})
 
         self.define_results(
             ("cell_metadata", {"index": True}),
@@ -19,12 +19,11 @@ class FinalOutput(analysistask.AnalysisTask):
         )
 
     def _combine_overlap_volumes(self):
-        volumes = pd.concat(
-            [
-                self.link_cell_task.load_result("overlap_volume", overlapName)
-                for overlapName in self.dataSet.get_overlap_names()
-            ]
-        )
+        volumes = []
+        for fragment in self.dataSet.get_overlap_names():
+            self.link_cell_task.fragment = fragment
+            volumes.append(self.link_cell_task.load_result("overlap_volume"))
+        volumes = pd.concat(volumes)
         return volumes.groupby("label").max()
 
     def get_scanpy_object(self):
@@ -37,7 +36,8 @@ class FinalOutput(analysistask.AnalysisTask):
             dfs = []
             cell_mapping = self.link_cell_task.get_cell_mapping()
             for fov in self.dataSet.get_fovs():
-                df = self.segment_task.load_metadata(fov)
+                self.segment_task.fragment = fov
+                df = self.segment_task.load_metadata()
                 df["cell_id"] = fov + "__" + df["cell_id"].astype(str)
                 df = df.rename(columns={"volume": "fov_volume"})
                 dfs.append(df)

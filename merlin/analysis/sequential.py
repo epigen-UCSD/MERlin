@@ -20,7 +20,7 @@ class SumSignal(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("warp_task", "segment_task", "global_align_task")
+        self.add_dependencies({"warp_task": [], "segment_task": [], "global_align_task": []})
         self.set_default_parameters({"apply_highpass": False, "highpass_sigma": 5, "z_index": 0})
 
         self.define_results("sequential_signal")
@@ -113,7 +113,7 @@ class ExportSumSignals(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-        self.add_dependencies("sequential_task")
+        self.add_dependencies({"sequential_task": []})
 
         self.define_results("sequential_sum_signals")
 

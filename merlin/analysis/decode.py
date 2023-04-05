@@ -22,7 +22,7 @@ class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
         super().setup(parallel=parallel)
 
     def reset_analysis(self, fragmentIndex: int = None) -> None:
-        super().reset_analysis(fragmentIndex)
+        super().reset_analysis()
         self.get_barcode_database().empty_database(fragmentIndex)
 
     def get_barcode_database(self) -> barcodedb.BarcodeDB:
@@ -42,20 +42,29 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("preprocess_task", "optimize_task", "global_align_task")
-        self.set_default_parameters({
-            "crop_width": 100,
-            "write_decoded_images": True,
-            "minimum_area": 0,
-            "distance_threshold": 0.5167,
-            "lowpass_sigma": 1,
-            "decode_3d": False,
-            "memory_map": False,
-            "remove_z_duplicated_barcodes": False,
-            "z_duplicate_zPlane_threshold": 1,
-            "z_duplicate_xy_pixel_threshold": np.sqrt(2),
-            "n_jobs": 1
-        })
+        self.add_dependencies(
+            {
+                "preprocess_task": [],
+                "optimize_task": ["scale_factors", "backgrounds", "chromatic_corrections"],
+                "global_align_task": [],
+            }
+        )
+
+        self.set_default_parameters(
+            {
+                "crop_width": 100,
+                "write_decoded_images": True,
+                "minimum_area": 0,
+                "distance_threshold": 0.5167,
+                "lowpass_sigma": 1,
+                "decode_3d": False,
+                "memory_map": False,
+                "remove_z_duplicated_barcodes": False,
+                "z_duplicate_zPlane_threshold": 1,
+                "z_duplicate_xy_pixel_threshold": np.sqrt(2),
+                "n_jobs": 1,
+            }
+        )
 
         self.cropWidth = self.parameters["crop_width"]
         self.imageSize = self.dataSet.get_image_dimensions()
@@ -63,7 +72,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     def get_codebook(self) -> Codebook:
         return self.preprocess_task.get_codebook()
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         """This function decodes the barcodes in a fov and saves them to the
         barcode database.
         """
@@ -87,7 +96,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         if not decode3d:
             for zIndex in range(zPositionCount):
                 di, pm, d = self._process_independent_z_slice(
-                    fragment, zIndex, chromaticCorrector, scaleFactors, backgrounds, self.preprocess_task, decoder
+                    self.fragment, zIndex, chromaticCorrector, scaleFactors, backgrounds, self.preprocess_task, decoder
                 )
 
                 decodedImages[zIndex, :, :] = di
@@ -107,7 +116,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     normalizedPixelTraces = np.zeros((zPositionCount, bitCount, *imageShape), dtype=np.float32)
 
                 for zIndex in range(zPositionCount):
-                    imageSet = self.preprocess_task.get_processed_image_set(fragment, zIndex, chromaticCorrector)
+                    imageSet = self.preprocess_task.get_processed_image_set(self.fragment, zIndex, chromaticCorrector)
                     imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
                     di, pm, npt, d = decoder.decode_pixels(
@@ -125,19 +134,19 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     distances[zIndex, :, :] = d
 
                 self._extract_and_save_barcodes(
-                    decoder, decodedImages, magnitudeImages, normalizedPixelTraces, distances, fragment
+                    decoder, decodedImages, magnitudeImages, normalizedPixelTraces, distances, self.fragment
                 )
 
                 del normalizedPixelTraces
 
         if self.parameters["write_decoded_images"]:
-            self._save_decoded_images(fragment, zPositionCount, decodedImages, magnitudeImages, distances)
+            self._save_decoded_images(self.fragment, zPositionCount, decodedImages, magnitudeImages, distances)
 
         if self.parameters["remove_z_duplicated_barcodes"]:
             bcDB = self.get_barcode_database()
-            bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=fragment))
-            bcDB.empty_database(fragment)
-            bcDB.write_barcodes(bc, fov=fragment)
+            bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=self.fragment))
+            bcDB.empty_database(self.fragment)
+            bcDB.write_barcodes(bc, fov=self.fragment)
 
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
@@ -226,7 +235,7 @@ class SpotDecode(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("warp_task")
+        self.add_dependencies({"warp_task": ["drifts"]})
 
         self.define_results("fits")
 
@@ -499,10 +508,10 @@ class SpotDecode(analysistask.AnalysisTask):
         # icodesN -> 10000000 index of the decoded molecules in gns_names
         # gns_names
 
-    def run_analysis(self, fragment):
+    def run_analysis(self):
         result = []
         for bit in self.dataSet.get_codebook().get_bit_names():
-            image = self.get_bit_image(fragment, bit)
+            image = self.get_bit_image(self.fragment, bit)
             fits = self.compute_fits(image)
             colors = self.dataSet.get_data_organization().data.color.unique()
             bit_index = self.dataSet.get_data_organization().get_data_channel_index(bit)
@@ -513,7 +522,7 @@ class SpotDecode(analysistask.AnalysisTask):
         fits = np.concatenate(result)
         self.fits = fits
         for bit in np.unique(fits[:, -1]):
-            drifts = self.warp_task.get_transformation(fragment, int(bit))
+            drifts = self.warp_task.get_transformation(int(bit))
             if len(drifts) == 3:
                 fits[fits[:, -1] == bit, :3] -= drifts
             else:
@@ -521,6 +530,6 @@ class SpotDecode(analysistask.AnalysisTask):
         inters = self.get_inters(fits)
         XH_pruned, icodesN, gns_names = self.get_icodes(inters, fits)
         savePath = self.dataSet._analysis_result_save_path(
-            "decoded", self.analysis_name, fragment, subdirectory="decoded"
+            "decoded", self.analysis_name, self.fragment, subdirectory="decoded"
         )
         np.savez_compressed(savePath, XH_pruned=XH_pruned, icodesN=icodesN, gns_names=np.array(gns_names))
