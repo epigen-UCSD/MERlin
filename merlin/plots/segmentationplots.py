@@ -1,8 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-from merlin.analysis.output import FinalOutput
-from merlin.analysis.segment import CellposeSegment, FeatureSavingAnalysisTask
+from merlin.analysis.segment import CellposeSegment, FeatureSavingAnalysisTask, LinkCellsInOverlaps
 from merlin.plots import tools
 from merlin.plots._base import AbstractPlot
 
@@ -44,7 +43,7 @@ class SegmentationBoundaryPlot(AbstractPlot):
 class CellposeBoundaryPlot(AbstractPlot):
     def __init__(self, plot_task):
         super().__init__(plot_task)
-        self.set_required_tasks({"segment_task": CellposeSegment, "output_task": FinalOutput})
+        self.set_required_tasks({"segment_task": CellposeSegment, "link_cell_task": LinkCellsInOverlaps})
         self.formats = [".png"]
 
     def plot_mask(self, fov, ax) -> None:
@@ -74,8 +73,8 @@ class CellposeBoundaryPlot(AbstractPlot):
     def create_plot(self, **kwargs) -> plt.Figure:
         self.segment_task = kwargs["tasks"]["segment_task"]
         self.dataset = self.segment_task.dataSet
-        output_task = kwargs["tasks"]["output_task"]
-        metadata = output_task.load_result("cell_metadata")
+        link_cell_task = kwargs["tasks"]["link_cell_task"]
+        metadata = link_cell_task.load_result("cell_metadata")
         metadata["fov"] = [cell_id.split("__")[0] for cell_id in metadata.index]
 
         fig, ax = plt.subplots(3, 2, figsize=(8, 12), dpi=300)
@@ -100,11 +99,11 @@ class CellposeBoundaryPlot(AbstractPlot):
 class CellVolumeHistogramPlot(AbstractPlot):
     def __init__(self, plot_task):
         super().__init__(plot_task)
-        self.set_required_tasks({"output_task": FinalOutput})
+        self.set_required_tasks({"link_cell_task": LinkCellsInOverlaps})
 
     def create_plot(self, **kwargs) -> plt.Figure:
-        output_task = kwargs["tasks"]["output_task"]
-        metadata = output_task.load_result("cell_metadata")
+        link_cell_task = kwargs["tasks"]["link_cell_task"]
+        metadata = link_cell_task.load_result("cell_metadata")
         fig = tools.plot_histogram(metadata, "volume")
         plt.xlabel("Cell volume (pixels)")
         return fig

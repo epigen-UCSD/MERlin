@@ -259,7 +259,9 @@ class CellposeSegment(analysistask.AnalysisTask):
         return mask[x_int][:, y_int]
 
     def load_metadata(self):
-        return self.dataSet.load_dataframe_from_csv("metadata", self.analysis_name, self.fragment, subdirectory="metadata")
+        return self.dataSet.load_dataframe_from_csv(
+            "metadata", self.analysis_name, self.fragment, subdirectory="metadata"
+        )
 
     def load_image(self, zIndex):
         image = self.dataSet.get_raw_image(self.channelIndex, self.fragment, zIndex)
@@ -273,9 +275,7 @@ class CellposeSegment(analysistask.AnalysisTask):
             inputImage = self.load_image(zIndex)
         else:
             zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
-            inputImage = np.array(
-                [self.load_image(self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions]
-            )
+            inputImage = np.array([self.load_image(self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions])
         model = cpmodels.Cellpose(gpu=False, model_type="cyto2")
         if inputImage.ndim == 2:
             mask, _, _, _ = model.eval(
@@ -326,6 +326,7 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         self.add_dependencies({"segment_task": [], "global_align_task": []})
 
         self.define_results("overlap_volume", "paired_cells")
+        self.define_results("cell_mapping", ("cell_metadata", {"index": True}), final=True)
 
         self.fragment_list = self.dataSet.get_overlap_names()
 
@@ -336,11 +337,11 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
 
     def get_cell_mapping(self):
         try:
-            return self.dataSet.load_pickle_analysis_result("cell_links", self.analysis_name)
+            return self.dataSet.load_pickle_analysis_result("cell_mapping", self.analysis_name)
         except FileNotFoundError:
             linked_sets = []
-            for overlapName in self.dataSet.get_overlap_names():
-                linked_sets.extend([set(link) for link in self.get_links(overlapName)])
+            for overlap_name in self.dataSet.get_overlap_names():
+                linked_sets.extend([set(link) for link in self.get_links(overlap_name)])
             # Combine sets until they are all disjoint
             # e.g., if there is a (1, 2) and (2, 3) set, combine to (1, 2, 3)
             # This is needed for corners where 4 FOVs overlap
@@ -362,7 +363,6 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
                 name = list(link_set)[0]
                 for cell in link_set:
                     cell_links[cell] = name
-            self.dataSet.save_pickle_analysis_result(cell_links, "cell_links", self.analysis_name)
             return cell_links
 
     def match_cells_in_overlap(self, strip_a: np.ndarray, strip_b: np.ndarray):
@@ -425,3 +425,34 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         dfb = pd.DataFrame(regionprops_table(strip_b, properties=["label", "area"]))
         dfb["label"] = b.fov + "__" + dfb["label"].astype(str)
         self.overlap_volume = pd.concat([dfa, dfb]).set_index("label")
+
+    def combine_overlap_volumes(self):
+        volumes = []
+        for fragment in self.fragment_list:
+            self.fragment = fragment
+            volumes.append(self.load_result("overlap_volume"))
+        self.fragment = ""
+        volumes = pd.concat(volumes)
+        return volumes.groupby("label").max()
+
+    def finalize_analysis(self):
+        dfs = []
+        self.cell_mapping = self.get_cell_mapping()
+        for fov in self.dataSet.get_fovs():
+            self.segment_task.fragment = fov
+            metadata = self.segment_task.load_metadata()
+            metadata["cell_id"] = fov + "__" + metadata["cell_id"].astype(str)
+            metadata = metadata.rename(columns={"volume": "fov_volume"})
+            dfs.append(metadata)
+        metadata = pd.concat(dfs).set_index("cell_id")
+        metadata["overlap_volume"] = self.combine_overlap_volumes()
+        metadata["overlap_volume"] = metadata["overlap_volume"].fillna(0)
+        metadata["nonoverlap_volume"] = metadata["fov_volume"] - metadata["overlap_volume"]
+        metadata.index = [self.cell_mapping.get(cell_id, cell_id) for cell_id in metadata.index]
+        metadata.index.name = "cell_id"
+        metadata = metadata.groupby("cell_id").agg(
+            {"global_x": "mean", "global_y": "mean", "overlap_volume": "mean", "nonoverlap_volume": "sum"}
+        )
+        metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
+        metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
+        self.cell_metadata = metadata

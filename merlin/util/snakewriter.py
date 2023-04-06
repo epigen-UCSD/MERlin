@@ -9,15 +9,16 @@ from merlin.core import analysistask, dataset
 
 def expand_as_string(task: analysistask.AnalysisTask) -> str:
     """Generate the expand function for the output of a parallel analysis task."""
-    task.fragment_list.append("{g}")
-    task.fragment = "{g}"
-    task.fragment_list.remove("{g}")
-    filename = task.status_file("done")
+    filename = task.status_file("done", fragment="{g}")
     return f"expand('{filename}', g={list(task.fragment_list)})"
 
 
 def generate_output(
-    task: analysistask.AnalysisTask, reftask: analysistask.AnalysisTask | None = None, *, full_output: bool = False
+    task: analysistask.AnalysisTask,
+    reftask: analysistask.AnalysisTask | None = None,
+    *,
+    full_output: bool = False,
+    finalize: bool = False,
 ) -> str:
     """Generate the output string for a task.
 
@@ -28,7 +29,7 @@ def generate_output(
     different fragment list (e.g. Optimize), then the output of all fragments for `task`
     are required for input to `reftask` and the expand string is returned.
     """
-    if not task.is_parallel():
+    if not task.is_parallel() or finalize:
         return f"'{task.status_file('done')}'"
     if full_output:
         return expand_as_string(task)
@@ -40,32 +41,29 @@ def generate_output(
         else:
             depends_all = True
     if depends_all:
+        if task.has_finalize_step():
+            return f"'{task.status_file('done')}'"
         return expand_as_string(task)
-    task.fragment_list.append("{i}")
-    task.fragment = "{i}"
-    task.fragment_list.remove("{i}")
-    return f"'{task.status_file('done')}'"
+    return f"'{task.status_file('done', fragment='{i}')}'"
 
 
-def generate_input(task: analysistask.AnalysisTask) -> str:
+def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -> str:
     """Generate the input string for a task."""
+    if finalize:
+        return generate_output(task, task, full_output=True)
     input_tasks = [getattr(task, x) for x in task.dependencies]
-    return (
-        ",".join([generate_output(x, task) for x in input_tasks])
-        if input_tasks
-        else ""
-    )
+    return ",".join([generate_output(x, task) for x in input_tasks]) if input_tasks else ""
 
 
-def generate_message(task: analysistask.AnalysisTask) -> str:
+def generate_message(task: analysistask.AnalysisTask, *, finalize: bool = False) -> str:
     """Generate the message string for a task."""
-    message = f"Running {task.analysis_name}"
-    if task.is_parallel():
+    message = f"Finalizing {task.analysis_name}" if finalize else f"Running {task.analysis_name}"
+    if task.is_parallel() and not finalize:
         message += " {wildcards.i}"
     return message
 
 
-def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) -> str:
+def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *, finalize: bool = False) -> str:
     """Generate the shell command for a task."""
     args = [
         python_path,
@@ -76,7 +74,7 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) ->
     ]
     if task.dataSet.profile:
         args.append("--profile")
-    if task.is_parallel():
+    if task.is_parallel() and not finalize:
         args.append("-i {wildcards.i}")
     args.append(task.dataSet.dataSetName)
     return " ".join(args)
@@ -84,14 +82,25 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str) ->
 
 def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python") -> str:
     """Generate the snakemake rule for a task."""
-    string = f"""
-    rule {task.analysis_name}:
-        input: {generate_input(task)}
-        output: {generate_output(task)}
-        message: "{generate_message(task)}"
-        shell: "{generate_shell_command(task, python_path)}"
-    """
-    return textwrap.dedent(string).strip()
+    lines = [
+        f"rule {task.analysis_name}:",
+        f"  input: {generate_input(task)}",
+        f"  output: {generate_output(task)}",
+        f"  message: '{generate_message(task)}'",
+        f"  shell: '{generate_shell_command(task, python_path)}'",
+    ]
+    if task.has_finalize_step():
+        lines.extend(
+            [
+                "",
+                f"rule {task.analysis_name}Finalize:",
+                f"  input: {generate_input(task, finalize=True)}",
+                f"  output: {generate_output(task, finalize=True)}",
+                f"  message: '{generate_message(task, finalize=True)}'",
+                f"  shell: '{generate_shell_command(task, python_path, finalize=True)}'",
+            ]
+        )
+    return "\n".join(lines)
 
 
 class SnakefileGenerator:
@@ -110,9 +119,7 @@ class SnakefileGenerator:
             name = task_dict.get("analysis_name")
             task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name, fragment="")
             if task.analysis_name in tasks:
-                raise Exception(
-                    "Analysis tasks must have unique names. " + task.analysis_name + " is redundant."
-                )
+                raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
             # TODO This should be more careful to not overwrite an existing
             # analysis task that has already been run.
             task.save()
@@ -140,10 +147,7 @@ class SnakefileGenerator:
         tasks = self.parse_parameters()
         terminal_tasks = self.identify_terminal_tasks(tasks)
         terminal_input = ",".join([generate_output(tasks[x], full_output=True) for x in terminal_tasks])
-        terminal_rule = f"""
-        rule all:
-            input: {terminal_input}
-        """.strip()
+        terminal_rule = f"rule all:\n  input: {terminal_input}".strip()
         task_rules = [snakemake_rule(x, self.python_path) for x in tasks.values()]
         snakemake_string = "\n\n".join([textwrap.dedent(terminal_rule).strip()] + task_rules)
 

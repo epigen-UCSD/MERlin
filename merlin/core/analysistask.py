@@ -71,6 +71,7 @@ class AnalysisTask:
         self._fragment_list = list(self.dataSet.get_fovs()) if parallel else []
         self.dependencies = {}
         self.results = {}
+        self.final_results = {}
 
     def __getattr__(self, attr):
         """Check if an unloaded dependency is being accessed and load it."""
@@ -93,7 +94,7 @@ class AnalysisTask:
         else:
             self.dependencies.update(dependencies)
 
-    def define_results(self, *metadata) -> None:
+    def define_results(self, *metadata, final: bool = False) -> None:
         for result in metadata:
             if isinstance(result, str):
                 result_name = result
@@ -102,9 +103,12 @@ class AnalysisTask:
                 result_name, kwargs = result
             else:
                 continue
-            self.results[result_name] = kwargs
-            if self.is_parallel():
-                Path(self.path, result_name).mkdir(parents=True, exist_ok=True)
+            if final:
+                self.final_results[result_name] = kwargs
+            else:
+                self.results[result_name] = kwargs
+                if self.is_parallel():
+                    Path(self.path, result_name).mkdir(parents=True, exist_ok=True)
 
     def set_default_parameters(self, defaults: dict[str, Any]) -> None:
         for key, value in defaults.items():
@@ -133,6 +137,9 @@ class AnalysisTask:
     def fragment(self, value: str) -> None:
         assert not value or (self.is_parallel() and value in self.fragment_list)
         self._fragment = value
+
+    def has_finalize_step(self) -> bool:
+        return hasattr(self, "finalize_analysis")
 
     def save(self, *, overwrite: bool = False) -> None:
         """Save a copy of this AnalysisTask into the data set.
@@ -173,8 +180,11 @@ class AnalysisTask:
             if self.dataSet.profile:
                 profiler = cProfile.Profile()
                 profiler.enable()
-            self.run_analysis()
-            self.save_results()
+            if not self.fragment and self.has_finalize_step():
+                self.finalize_analysis()
+            else:
+                self.run_analysis()
+            self.save_result()
             if self.dataSet.profile:
                 profiler.disable()
                 stat_string = io.StringIO()
@@ -202,10 +212,10 @@ class AnalysisTask:
         # self.reset()
         ...
 
-    def status_file(self, status: str) -> Path:
-        filename = (
-            f"{self.analysis_name}_{self.fragment}.{status}" if self.fragment else f"{self.analysis_name}.{status}"
-        )
+    def status_file(self, status: str, fragment: str = "") -> Path:
+        if not fragment:
+            fragment = self.fragment
+        filename = f"{self.analysis_name}_{fragment}.{status}" if fragment else f"{self.analysis_name}.{status}"
         return Path(self.path, "tasks", filename)
 
     def status(self, status: str) -> bool:
@@ -264,25 +274,27 @@ class AnalysisTask:
             return self.path / result_name / f"{result_name}_{self.fragment}{extension}"
         return self.path / f"{result_name}{extension}"
 
-    def save_results(self) -> None:
-        for result_name in self.results:
-            self.save_result(result_name)
-
-    def save_result(self, result_name: str) -> None:
-        if not hasattr(self, result_name):
-            raise ResultNotFoundError(result_name)
-        result = getattr(self, result_name)
-        if isinstance(result, np.ndarray):
-            np.save(self.result_path(result_name, ".npy"), result)
-        elif isinstance(result, pd.DataFrame):
-            result.to_csv(self.result_path(result_name, ".csv"), **self.results[result_name])
-        elif isinstance(result, sc.AnnData):
-            result.write(self.result_path(result_name, ".h5ad"))
+    def save_result(self, result_name: str = "") -> None:
+        results = self.final_results if self.has_finalize_step() and not self.fragment else self.results
+        if not result_name:
+            for result_name in results:
+                self.save_result(result_name)
         else:
-            with self.result_path(result_name, ".pkl").open("wb") as f:
-                pickle.dump(result, f)
+            if not hasattr(self, result_name):
+                raise ResultNotFoundError(result_name)
+            result = getattr(self, result_name)
+            if isinstance(result, np.ndarray):
+                np.save(self.result_path(result_name, ".npy"), result)
+            elif isinstance(result, pd.DataFrame):
+                result.to_csv(self.result_path(result_name, ".csv"), **results[result_name])
+            elif isinstance(result, sc.AnnData):
+                result.write(self.result_path(result_name, ".h5ad"))
+            else:
+                with self.result_path(result_name, ".pkl").open("wb") as f:
+                    pickle.dump(result, f)
 
     def load_result(self, result_name: str) -> Any:
+        results = self.final_results if self.has_finalize_step() and not self.fragment else self.results
         if self.fragment:
             files = list(Path(self.path, result_name).glob(f"{result_name}_{self.fragment}.*"))
         else:
@@ -291,7 +303,7 @@ class AnalysisTask:
         if filename.suffix == ".npy":
             return np.load(filename, allow_pickle=True)
         if filename.suffix == ".csv":
-            if "index" not in self.results[result_name] or not self.results[result_name]["index"]:
+            if "index" not in results[result_name] or not results[result_name]["index"]:
                 index_col = None
             else:
                 index_col = 0
