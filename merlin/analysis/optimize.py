@@ -254,30 +254,16 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             a one-dimensional numpy array where the i'th entry is the
             scale factor corresponding to the i'th bit.
         """
-        refactors = np.array(
-            [
-                self.dataSet.load_analysis_task(self.analysis_name, i).load_result("scale_factors")
-                for i in self.fragment_list
-            ]
-        )
-
+        refactors = np.array(self.aggregate_result("scale_factors"))
         # Don't rescale bits that were never seen
         refactors[refactors == 0] = 1
-
         previous_factors = self._get_previous_scale_factors()
-
         return np.nanmedian(np.multiply(refactors, previous_factors), axis=0)
 
     def get_backgrounds(self) -> np.ndarray:
-        refactors = np.array(
-            [
-                self.dataSet.load_analysis_task(self.analysis_name, i).load_result("background_factors")
-                for i in self.fragment_list
-            ]
-        )
+        refactors = np.array(self.aggregate_result("background_factors"))
         previous_backgrounds = self._get_previous_backgrounds()
         previous_factors = self._get_previous_scale_factors()
-
         return np.nanmedian(np.add(previous_backgrounds, np.multiply(refactors, previous_factors)), axis=0)
 
     def get_scale_factor_history(self) -> np.ndarray:
@@ -302,19 +288,10 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             barcode count corresponding to the i'th barcode in the j'th
             iteration.
         """
-        counts_mean = np.mean(
-            [
-                self.dataSet.load_analysis_task(self.analysis_name, i).load_result("barcode_counts")
-                for i in self.fragment_list
-            ],
-            axis=0,
-        )
-
+        counts_mean = np.mean(self.aggregate_result("barcode_counts"), axis=0)
         if "previous_iteration" not in self.parameters:
             return np.array([counts_mean])
-        previous_history = self.dataSet.load_analysis_task(
-            self.parameters["previous_iteration"], ""
-        ).get_barcode_count_history()
+        previous_history = self.previous_iteration.get_barcode_count_history()
         return np.append(previous_history, [counts_mean], axis=0)
 
     def finalize_analysis(self) -> None:

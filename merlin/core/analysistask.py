@@ -295,10 +295,12 @@ class AnalysisTask:
                 with self.result_path(result_name, ".pkl").open("wb") as f:
                     pickle.dump(result, f)
 
-    def load_result(self, result_name: str) -> Any:
-        results = self.final_results if self.has_finalize_step() and not self.fragment else self.results
-        if self.fragment:
-            files = list(Path(self.path, result_name).glob(f"{result_name}_{self.fragment}.*"))
+    def load_result(self, result_name: str, fragment: str = "") -> Any:
+        if not fragment:
+            fragment = self.fragment
+        results = self.final_results if self.has_finalize_step() and not fragment else self.results
+        if fragment:
+            files = list(Path(self.path, result_name).glob(f"{result_name}_{fragment}.*"))
         else:
             files = list(self.path.glob(f"{result_name}.*"))
         filename = files[0]
@@ -316,3 +318,6 @@ class AnalysisTask:
             with filename.open("rb") as f:
                 return pickle.load(f)
         raise ResultNotFoundError(f"Unsupported format of {filename}")
+
+    def aggregate_result(self, result_name: str) -> list[Any]:
+        return [self.load_result(result_name, fragment) for fragment in self.fragment_list]
