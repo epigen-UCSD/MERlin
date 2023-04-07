@@ -256,6 +256,8 @@ class AnalysisTask:
         if self.is_parallel() and not self.fragment:
             if self.status("done"):
                 return True
+            if self.has_finalize_step():
+                return False
             all_complete = all(
                 self.dataSet.load_analysis_task(self.analysis_name, i).is_complete() for i in self.fragment_list
             )

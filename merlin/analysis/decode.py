@@ -45,7 +45,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         self.add_dependencies(
             {
                 "preprocess_task": [],
-                "optimize_task": ["scale_factors", "backgrounds", "chromatic_corrections"],
+                "optimize_task": ["scale_factors", "background_factors", "chromatic_corrections"],
                 "global_align_task": [],
             }
         )
@@ -82,8 +82,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
 
         codebook = self.get_codebook()
         decoder = decoding.PixelBasedDecoder(codebook)
-        scaleFactors = self.optimize_task.get_scale_factors()
-        backgrounds = self.optimize_task.get_backgrounds()
+        scaleFactors = self.optimize_task.load_result("scale_factors")
+        backgrounds = self.optimize_task.load_result("background_factors")
         chromaticCorrector = self.optimize_task.get_chromatic_corrector()
 
         zPositionCount = len(self.dataSet.get_z_positions())

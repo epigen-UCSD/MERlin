@@ -32,7 +32,7 @@ class ScaleFactorVsBitNumberPlot(AbstractPlot):
             for x in codebook.get_bit_names()
         ]
 
-        scale_factors = optimize_task.get_scale_factors()
+        scale_factors = optimize_task.load_result("scale_factors")
         scale_factors_by_color = {c: [] for c in set(colors)}
         for i, s in enumerate(scale_factors):
             scale_factors_by_color[colors[i]].append((i, s))

@@ -1,9 +1,7 @@
 import itertools
-from pathlib import Path
-from typing import Dict, List
 
 import numpy as np
-import pandas
+import pandas as pd
 from skimage import transform
 
 from merlin.analysis import decode
@@ -12,17 +10,14 @@ from merlin.util import aberration, decoding, registration
 
 
 class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
-
-    """
-    An analysis task for performing a single iteration of scale factor
-    optimization.
-    """
+    """An analysis task for performing a single iteration of scale factor optimization."""
 
     def setup(self) -> None:
         super().setup(parallel=True)
 
         self.add_dependencies({"preprocess_task": [], "warp_task": ["drifts"]})
         self.add_dependencies({"previous_iteration": []}, optional=True)
+
         self.set_default_parameters(
             {
                 "fov_per_iteration": 50,
@@ -35,15 +30,9 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         )
 
         self.define_results(
-            "previous_scale_factors",
-            "previous_backgrounds",
-            "previous_chromatic_corrections",
-            "select_frame",
-            "scale_factors",
-            "background_factors",
-            "chromatic_corrections",
-            "barcode_counts"
+            "select_frame", "scale_factors", "background_factors", "chromatic_corrections", "barcode_counts"
         )
+        self.define_results("scale_factors", "background_factors", "chromatic_corrections", final=True)
 
         if "fov_index" in self.parameters:
             logger = self.dataSet.get_logger(self)
@@ -71,35 +60,28 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
     def run_analysis(self):
         codebook = self.get_codebook()
 
-        fovIndex, zIndex = self.fragment.split("__")
-        zIndex = int(zIndex)
+        fov_index, z_index = self.fragment.split("__")
+        z_index = int(z_index)
 
-        scaleFactors = self._get_previous_scale_factors()
+        scale_factors = self._get_previous_scale_factors()
         backgrounds = self._get_previous_backgrounds()
-        chromaticTransformations = self._get_previous_chromatic_transformations()
+        chromatic_transformation = self._get_previous_chromatic_transformations()
 
-        self.previous_scale_factors = scaleFactors
-        self.save_result("previous_scale_factors")
-        self.previous_backgrounds = backgrounds
-        self.save_result("previous_backgrounds")
-        self.previous_chromatic_corrections = chromaticTransformations
-        self.save_result("previous_chromatic_corrections")
-
-        self.select_frame = np.array([fovIndex, zIndex])
+        self.select_frame = np.array([fov_index, z_index])
         self.save_result("select_frame")
 
-        chromaticCorrector = aberration.RigidChromaticCorrector(chromaticTransformations, self.get_reference_color())
-        self.chromatic_corrections = chromaticTransformations
-        preprocess_task = self.dataSet.load_analysis_task("DeconvolutionPreprocessGuo", fovIndex)
-        warpedImages = preprocess_task.get_processed_image_set(
-            fovIndex, zIndex=zIndex, chromaticCorrector=chromaticCorrector
+        chromatic_corrector = aberration.RigidChromaticCorrector(chromatic_transformation, self.get_reference_color())
+        self.chromatic_corrections = chromatic_transformation
+        preprocess_task = self.dataSet.load_analysis_task("DeconvolutionPreprocessGuo", fov_index)
+        warped_images = preprocess_task.get_processed_image_set(
+            fov_index, zIndex=z_index, chromaticCorrector=chromatic_corrector
         )
 
         decoder = decoding.PixelBasedDecoder(codebook)
-        areaThreshold = self.parameters["area_threshold"]
-        decoder.refactorAreaThreshold = areaThreshold
+        area_threshold = self.parameters["area_threshold"]
+        decoder.refactorAreaThreshold = area_threshold
         di, pm, npt, d = decoder.decode_pixels(
-            warpedImages, scaleFactors, backgrounds, n_jobs=self.parameters["n_jobs"]
+            warped_images, scale_factors, backgrounds, n_jobs=self.parameters["n_jobs"]
         )
 
         self.scale_factors, self.background_factors, self.barcode_counts = decoder.extract_refactors(
@@ -108,12 +90,12 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
         # TODO this saves the barcodes under fragment instead of fov
         # the barcodedb should be made more general
-        cropWidth = self.parameters["crop_width"]
+        crop_width = self.parameters["crop_width"]
         self.get_barcode_database().write_barcodes(
-            pandas.concat(
+            pd.concat(
                 [
                     decoder.extract_barcodes_with_index(
-                        i, di, pm, npt, d, fovIndex, cropWidth, zIndex, minimumArea=areaThreshold
+                        i, di, pm, npt, d, fov_index, crop_width, z_index, minimumArea=area_threshold
                     )
                     for i in range(codebook.get_barcode_count())
                 ]
@@ -121,74 +103,62 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             fov=self.fragment,
         )
 
-    def _get_used_colors(self) -> List[str]:
-        dataOrganization = self.dataSet.get_data_organization()
+    def _get_used_colors(self) -> list[str]:
+        data_organization = self.dataSet.get_data_organization()
         codebook = self.get_codebook()
         return sorted(
             {
-                dataOrganization.get_data_channel_color(dataOrganization.get_data_channel_for_bit(x))
+                data_organization.get_data_channel_color(data_organization.get_data_channel_for_bit(x))
                 for x in codebook.get_bit_names()
             }
         )
 
     def _calculate_initial_scale_factors(self) -> np.ndarray:
-        bitCount = self.get_codebook().get_bit_count()
+        bit_count = self.get_codebook().get_bit_count()
 
-        initialScaleFactors = np.zeros(bitCount)
-        pixelHistograms = self.preprocess_task.get_pixel_histogram()
-        for i in range(bitCount):
-            cumulativeHistogram = np.cumsum(pixelHistograms[i])
-            cumulativeHistogram = cumulativeHistogram / cumulativeHistogram[-1]
+        initial_scale_factors = np.zeros(bit_count)
+        pixel_histrograms = self.preprocess_task.get_pixel_histogram()
+        for i in range(bit_count):
+            cumulative_histogram = np.cumsum(pixel_histrograms[i])
+            cumulative_histogram = cumulative_histogram / cumulative_histogram[-1]
             # Add two to match matlab code.
             # TODO: Does +2 make sense? Used to be consistent with Matlab code
-            initialScaleFactors[i] = np.argmin(np.abs(cumulativeHistogram - 0.9)) + 2
+            initial_scale_factors[i] = np.argmin(np.abs(cumulative_histogram - 0.9)) + 2
 
-        return initialScaleFactors
+        return initial_scale_factors
 
     def _get_previous_scale_factors(self) -> np.ndarray:
         if "previous_iteration" not in self.parameters:
-            scaleFactors = self._calculate_initial_scale_factors()
-        else:
-            previousIteration = self.dataSet.load_analysis_task(self.parameters["previous_iteration"], "")
-            scaleFactors = previousIteration.get_scale_factors()
-
-        return scaleFactors
+            return self._calculate_initial_scale_factors()
+        return self.previous_iteration.load_result("scale_factors")
 
     def _get_previous_backgrounds(self) -> np.ndarray:
         if "previous_iteration" not in self.parameters:
-            backgrounds = np.zeros(self.get_codebook().get_bit_count())
-        else:
-            previousIteration = self.dataSet.load_analysis_task(self.parameters["previous_iteration"], "")
-            backgrounds = previousIteration.get_backgrounds()
+            return np.zeros(self.get_codebook().get_bit_count())
+        return self.previous_iteration.load_result("background_factors")
 
-        return backgrounds
-
-    def _get_previous_chromatic_transformations(self) -> Dict[str, Dict[str, transform.SimilarityTransform]]:
+    def _get_previous_chromatic_transformations(self) -> dict[str, dict[str, transform.SimilarityTransform]]:
         if "previous_iteration" not in self.parameters:
-            usedColors = self._get_used_colors()
-            return {u: {v: transform.SimilarityTransform() for v in usedColors if v >= u} for u in usedColors}
-        else:
-            previousIteration = self.dataSet.load_analysis_task(self.parameters["previous_iteration"], "")
-            return previousIteration._get_chromatic_transformations()
+            colors = self._get_used_colors()
+            return {u: {v: transform.SimilarityTransform() for v in colors if v >= u} for u in colors}
+        return self.previous_iteration.load_result("chromatic_corrections")
 
     # TODO the next two functions could be in a utility class. Make a
     #  chromatic aberration utility class
 
-    def get_reference_color(self):
+    def get_reference_color(self) -> str:
         return min(self._get_used_colors())
 
     def get_chromatic_corrector(self) -> aberration.ChromaticCorrector:
-        """Get the chromatic corrector estimated from this optimization
-        iteration
+        """Get the chromatic corrector estimated from this optimization iteration.
 
         Returns:
             The chromatic corrector.
         """
         return aberration.RigidChromaticCorrector(self._get_chromatic_transformations(), self.get_reference_color())
 
-    def _get_chromatic_transformations(self) -> Dict[str, Dict[str, transform.SimilarityTransform]]:
-        """Get the estimated chromatic corrections from this optimization
-        iteration.
+    def _get_chromatic_transformations(self) -> dict[str, dict[str, transform.SimilarityTransform]]:
+        """Get the estimated chromatic corrections from this optimization iteration.
 
         Returns:
             a dictionary of dictionary of transformations for transforming
@@ -196,100 +166,86 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             for transforming the farther red color, e.g. '750', to the
             farther blue color, e.g. '560', is found at result['560']['750']
         """
-        #if not self.is_complete():
-        #    raise Exception("Analysis is still running. Unable to get scale " + "factors.")
-
         if not self.parameters["optimize_chromatic_correction"]:
-            usedColors = self._get_used_colors()
-            return {u: {v: transform.SimilarityTransform() for v in usedColors if v >= u} for u in usedColors}
+            colors = self._get_used_colors()
+            return {u: {v: transform.SimilarityTransform() for v in colors if v >= u} for u in colors}
 
-        try:
-            return self.dataSet.load_pickle_analysis_result("chromatic_corrections", self.analysis_name)
-        # OSError and ValueError are raised if the previous file is not
-        # completely written
-        except (FileNotFoundError, OSError, ValueError, EOFError):
-            # TODO - this is messy. It can be broken into smaller subunits and
-            # most parts could be included in a chromatic aberration class
-            previousTransformations = self._get_previous_chromatic_transformations()
-            previousCorrector = aberration.RigidChromaticCorrector(previousTransformations, self.get_reference_color())
-            codebook = self.get_codebook()
-            dataOrganization = self.dataSet.get_data_organization()
+        # TODO - this is messy. It can be broken into smaller subunits and
+        # most parts could be included in a chromatic aberration class
+        previous_transformations = self._get_previous_chromatic_transformations()
+        previous_corrector = aberration.RigidChromaticCorrector(previous_transformations, self.get_reference_color())
+        codebook = self.get_codebook()
+        data_organization = self.dataSet.get_data_organization()
 
-            barcodes = self.get_barcode_database().get_barcodes()
-            uniqueFOVs = np.unique(barcodes["fov"])
+        barcodes = self.get_barcode_database().get_barcodes()
+        fov_list = np.unique(barcodes["fov"])
 
-            usedColors = self._get_used_colors()
-            colorPairDisplacements = {u: {v: [] for v in usedColors if v >= u} for u in usedColors}
+        colors = self._get_used_colors()
+        colorPairDisplacements = {u: {v: [] for v in colors if v >= u} for u in colors}
 
-            for fov in uniqueFOVs:
+        for fov in fov_list:
 
-                fovBarcodes = barcodes[barcodes["fov"] == fov]
-                zIndexes = np.unique(fovBarcodes["z"])
-                for z in zIndexes:
-                    currentBarcodes = fovBarcodes[fovBarcodes["z"] == z]
-                    # TODO this can be moved to the run function for the task
-                    # so not as much repeated work is done when it is called
-                    # from many different tasks in parallel
-                    warpedImages = np.array(
-                        [
-                            self.dataSet.load_analysis_task(self.parameters["warp_task"], fov).get_aligned_image(
-                                fov, dataOrganization.get_data_channel_for_bit(b), int(z), previousCorrector
-                            )
-                            for b in codebook.get_bit_names()
-                        ]
-                    )
+            fovBarcodes = barcodes[barcodes["fov"] == fov]
+            zIndexes = np.unique(fovBarcodes["z"])
+            for z in zIndexes:
+                currentBarcodes = fovBarcodes[fovBarcodes["z"] == z]
+                # TODO this can be moved to the run function for the task
+                # so not as much repeated work is done when it is called
+                # from many different tasks in parallel
+                warpedImages = np.array(
+                    [
+                        self.dataSet.load_analysis_task(self.parameters["warp_task"], fov).get_aligned_image(
+                            fov, data_organization.get_data_channel_for_bit(b), int(z), previous_corrector
+                        )
+                        for b in codebook.get_bit_names()
+                    ]
+                )
 
-                    for i, cBC in currentBarcodes.iterrows():
-                        onBits = np.where(codebook.get_barcode(cBC["barcode_id"]))[0]
+                for i, cBC in currentBarcodes.iterrows():
+                    onBits = np.where(codebook.get_barcode(cBC["barcode_id"]))[0]
 
-                        # TODO this can be done by crop width when decoding
-                        if (
-                            cBC["x"] > 10
-                            and cBC["y"] > 10
-                            and warpedImages.shape[1] - cBC["x"] > 10
-                            and warpedImages.shape[2] - cBC["y"] > 10
-                        ):
+                    # TODO this can be done by crop width when decoding
+                    if (
+                        cBC["x"] > 10
+                        and cBC["y"] > 10
+                        and warpedImages.shape[1] - cBC["x"] > 10
+                        and warpedImages.shape[2] - cBC["y"] > 10
+                    ):
 
-                            refinedPositions = np.array(
-                                [
-                                    registration.refine_position(warpedImages[i, :, :], cBC["x"], cBC["y"])
-                                    for i in onBits
-                                ]
-                            )
-                            for p in itertools.combinations(enumerate(onBits), 2):
-                                c1 = dataOrganization.get_data_channel_color(p[0][1])
-                                c2 = dataOrganization.get_data_channel_color(p[1][1])
+                        refinedPositions = np.array(
+                            [registration.refine_position(warpedImages[i, :, :], cBC["x"], cBC["y"]) for i in onBits]
+                        )
+                        for p in itertools.combinations(enumerate(onBits), 2):
+                            c1 = data_organization.get_data_channel_color(p[0][1])
+                            c2 = data_organization.get_data_channel_color(p[1][1])
 
-                                if c1 < c2:
-                                    colorPairDisplacements[c1][c2].append(
-                                        [
-                                            np.array([cBC["x"], cBC["y"]]),
-                                            refinedPositions[p[1][0]] - refinedPositions[p[0][0]],
-                                        ]
-                                    )
-                                else:
-                                    colorPairDisplacements[c2][c1].append(
-                                        [
-                                            np.array([cBC["x"], cBC["y"]]),
-                                            refinedPositions[p[0][0]] - refinedPositions[p[1][0]],
-                                        ]
-                                    )
+                            if c1 < c2:
+                                colorPairDisplacements[c1][c2].append(
+                                    [
+                                        np.array([cBC["x"], cBC["y"]]),
+                                        refinedPositions[p[1][0]] - refinedPositions[p[0][0]],
+                                    ]
+                                )
+                            else:
+                                colorPairDisplacements[c2][c1].append(
+                                    [
+                                        np.array([cBC["x"], cBC["y"]]),
+                                        refinedPositions[p[0][0]] - refinedPositions[p[1][0]],
+                                    ]
+                                )
 
-            tForms = {}
-            for k, v in colorPairDisplacements.items():
-                tForms[k] = {}
-                for k2, v2 in v.items():
-                    tForm = transform.SimilarityTransform()
-                    goodIndexes = [i for i, x in enumerate(v2) if not any(np.isnan(x[1])) and not any(np.isinf(x[1]))]
-                    tForm.estimate(
-                        np.array([v2[i][0] for i in goodIndexes]), np.array([v2[i][0] + v2[i][1] for i in goodIndexes])
-                    )
-                    tForms[k][k2] = tForm + previousTransformations[k][k2]
+        tForms = {}
+        for k, v in colorPairDisplacements.items():
+            tForms[k] = {}
+            for k2, v2 in v.items():
+                tForm = transform.SimilarityTransform()
+                goodIndexes = [i for i, x in enumerate(v2) if not any(np.isnan(x[1])) and not any(np.isinf(x[1]))]
+                tForm.estimate(
+                    np.array([v2[i][0] for i in goodIndexes]), np.array([v2[i][0] + v2[i][1] for i in goodIndexes])
+                )
+                tForms[k][k2] = tForm + previous_transformations[k][k2]
 
-            self.chromatic_corrections = tForms
-            self.save_result("chromatic_corrections")
-
-            return tForms
+        return tForms
 
     def get_scale_factors(self) -> np.ndarray:
         """Get the final, optimized scale factors.
@@ -298,78 +254,31 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             a one-dimensional numpy array where the i'th entry is the
             scale factor corresponding to the i'th bit.
         """
-        #if not self.is_complete():
-        #    raise Exception("Analysis is still running. Unable to get scale " + "factors.")
+        refactors = np.array(
+            [
+                self.dataSet.load_analysis_task(self.analysis_name, i).load_result("scale_factors")
+                for i in self.fragment_list
+            ]
+        )
 
-        try:
-            return self.load_result("scale_factors")
-        # OSError and ValueError are raised if the previous file is not
-        # completely written
-        except (FileNotFoundError, OSError, ValueError, EOFError, IndexError):
-            refactors = np.array(
-                [
-                    self.dataSet.load_analysis_task(self.analysis_name, i).load_result("scale_factors")
-                    for i in self.fragment_list
-                ]
-            )
+        # Don't rescale bits that were never seen
+        refactors[refactors == 0] = 1
 
-            # Don't rescale bits that were never seen
-            refactors[refactors == 0] = 1
+        previous_factors = self._get_previous_scale_factors()
 
-            previousFactors = np.array(
-                [
-                    self.dataSet.load_analysis_task(self.analysis_name, i).load_result(
-                        "previous_scale_factors"
-                    )
-                    for i in self.fragment_list
-                ]
-            )
-
-            scaleFactors = np.nanmedian(np.multiply(refactors, previousFactors), axis=0)
-
-            self.scale_factors = scaleFactors
-            self.save_result("scale_factors")
-
-            return scaleFactors
+        return np.nanmedian(np.multiply(refactors, previous_factors), axis=0)
 
     def get_backgrounds(self) -> np.ndarray:
-        #if not self.is_complete():
-        #    raise Exception("Analysis is still running. Unable to get " + "backgrounds.")
+        refactors = np.array(
+            [
+                self.dataSet.load_analysis_task(self.analysis_name, i).load_result("background_factors")
+                for i in self.fragment_list
+            ]
+        )
+        previous_backgrounds = self._get_previous_backgrounds()
+        previous_factors = self._get_previous_scale_factors()
 
-        try:
-            return self.load_result("backgrounds")
-        # OSError and ValueError are raised if the previous file is not
-        # completely written
-        except (FileNotFoundError, OSError, ValueError, EOFError, IndexError):
-            refactors = np.array(
-                [
-                    self.dataSet.load_analysis_task(self.analysis_name, i).load_result("background_factors")
-                    for i in self.fragment_list
-                ]
-            )
-
-            previousBackgrounds = np.array(
-                [
-                    self.dataSet.load_analysis_task(self.analysis_name, i).load_result("previous_backgrounds")
-                    for i in self.fragment_list
-                ]
-            )
-
-            previousFactors = np.array(
-                [
-                    self.dataSet.load_analysis_task(self.analysis_name, i).load_result(
-                        "previous_scale_factors"
-                    )
-                    for i in self.fragment_list
-                ]
-            )
-
-            backgrounds = np.nanmedian(np.add(previousBackgrounds, np.multiply(refactors, previousFactors)), axis=0)
-
-            self.backgrounds = backgrounds
-            self.save_result("backgrounds")
-
-            return backgrounds
+        return np.nanmedian(np.add(previous_backgrounds, np.multiply(refactors, previous_factors)), axis=0)
 
     def get_scale_factor_history(self) -> np.ndarray:
         """Get the scale factors cached for each iteration of the optimization.
@@ -380,12 +289,9 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             iteration.
         """
         if "previous_iteration" not in self.parameters:
-            return np.array([self.get_scale_factors()])
-        else:
-            previousHistory = self.dataSet.load_analysis_task(
-                self.parameters["previous_iteration"], ""
-            ).get_scale_factor_history()
-            return np.append(previousHistory, [self.get_scale_factors()], axis=0)
+            return np.array([self.load_result("scale_factors")])
+        previous_history = self.previous_iteration.get_scale_factor_history()
+        return np.append(previous_history, [self.load_result("scale_factors")], axis=0)
 
     def get_barcode_count_history(self) -> np.ndarray:
         """Get the set of barcode counts for each iteration of the
@@ -396,7 +302,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             barcode count corresponding to the i'th barcode in the j'th
             iteration.
         """
-        countsMean = np.mean(
+        counts_mean = np.mean(
             [
                 self.dataSet.load_analysis_task(self.analysis_name, i).load_result("barcode_counts")
                 for i in self.fragment_list
@@ -405,9 +311,13 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         )
 
         if "previous_iteration" not in self.parameters:
-            return np.array([countsMean])
-        else:
-            previousHistory = self.dataSet.load_analysis_task(
-                self.parameters["previous_iteration"], ""
-            ).get_barcode_count_history()
-            return np.append(previousHistory, [countsMean], axis=0)
+            return np.array([counts_mean])
+        previous_history = self.dataSet.load_analysis_task(
+            self.parameters["previous_iteration"], ""
+        ).get_barcode_count_history()
+        return np.append(previous_history, [counts_mean], axis=0)
+
+    def finalize_analysis(self) -> None:
+        self.scale_factors = self.get_scale_factors()
+        self.background_factors = self.get_backgrounds()
+        self.chromatic_corrections = self._get_chromatic_transformations()
