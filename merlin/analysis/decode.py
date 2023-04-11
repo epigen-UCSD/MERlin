@@ -23,7 +23,7 @@ class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
 
     def reset_analysis(self, fragmentIndex: int = None) -> None:
         super().reset_analysis()
-        self.get_barcode_database().empty_database(fragmentIndex)
+        self.get_barcode_database().empty_database(self.fragment)
 
     def get_barcode_database(self) -> barcodedb.BarcodeDB:
         """Get the barcode database this analysis task saves barcodes into.
