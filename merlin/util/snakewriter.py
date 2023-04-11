@@ -76,6 +76,10 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *,
         args.append("--profile")
     if task.is_parallel() and not finalize:
         args.append("-i {wildcards.i}")
+    if task.dataSet.analysisHome / task.dataSet.dataSetName != task.dataSet.analysisPath:
+        rootlen = len(str(task.dataSet.analysisHome / task.dataSet.dataSetName))
+        suffix = str(task.dataSet.analysisPath)[rootlen+1:]
+        args.append(f"--suffix {suffix}")
     args.append(task.dataSet.dataSetName)
     return " ".join(args)
 

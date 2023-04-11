@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-f", "--fovs", help="filename containing list of FOVs to process")
     parser.add_argument("--skip", nargs="+", help="list of FOV names to omit from processing")
     parser.add_argument("--profile", action="store_true", help="profile tasks and dump to logs")
+    parser.add_argument("--suffix", help="Suffix to add to the analysis output directory name")
 
     return parser
 
@@ -105,6 +106,7 @@ def run_merlin() -> None:
         fovList=get_optional_path(args.fovs),
         profile=args.profile,
         skip=args.skip,
+        analysis_suffix=args.suffix
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME

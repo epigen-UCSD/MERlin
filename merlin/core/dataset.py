@@ -42,7 +42,13 @@ class DataFormatException(Exception):
 
 
 class DataSet(object):
-    def __init__(self, dataDirectoryName: Path, dataHome: Path | None = None, analysisHome: Path | None = None):
+    def __init__(
+        self,
+        dataDirectoryName: Path,
+        dataHome: Path | None = None,
+        analysisHome: Path | None = None,
+        analysis_suffix: str | None = None,
+    ) -> None:
         """Create a dataset for the specified raw data.
 
         Args:
@@ -70,13 +76,15 @@ class DataSet(object):
         if not self.rawDataPortal.is_available():
             print("The raw data is not available at %s".format(self.rawDataPath))
 
-        self.analysisPath = analysisHome / dataDirectoryName
+        analysis_name = Path(f"{str(dataDirectoryName)}_{analysis_suffix}") if analysis_suffix else dataDirectoryName
+        self.analysisPath = analysisHome / analysis_name
+
+        self._store_dataset_metadata()
+
         self.analysisPath.mkdir(parents=True, exist_ok=True)
 
         self.logPath = self.analysisPath / "logs"
         self.logPath.mkdir(parents=True, exist_ok=True)
-
-        self._store_dataset_metadata()
 
     def _store_dataset_metadata(self) -> None:
         try:
@@ -90,6 +98,7 @@ class DataSet(object):
                     )
                     % (self.dataSetName, oldMetadata["version"], merlin.version())
                 )
+            self.analysisPath = Path(oldMetadata["analysis_path"])
         except FileNotFoundError:
             newMetadata = {
                 "merlin_version": merlin.version(),
@@ -97,7 +106,9 @@ class DataSet(object):
                 "class": type(self).__name__,
                 "dataset_name": self.dataSetName,
                 "creation_date": str(datetime.datetime.now()),
+                "analysis_path": str(self.analysisPath),
             }
+            self.analysisPath.mkdir(parents=True, exist_ok=True)
             self.save_json_analysis_result(newMetadata, "dataset", None)
 
     def save_workflow(self, workflowString: str) -> Path:
@@ -253,7 +264,6 @@ class DataSet(object):
         subdirectory: str = None,
         fileExtension: str = None,
     ) -> str:
-
         saveName = resultName
         if resultIndex is not None:
             saveName += "_" + str(resultIndex)
@@ -564,9 +574,7 @@ class DataSet(object):
         except IOError:
             return defaultValue
 
-    def get_analysis_subdirectory(
-        self, analysisTask: TaskOrName, subdirectory: str = '', create: bool = True
-    ) -> Path:
+    def get_analysis_subdirectory(self, analysisTask: TaskOrName, subdirectory: str = "", create: bool = True) -> Path:
         """
         analysisTask can either be the class or a string containing the
         class name.
@@ -718,7 +726,8 @@ class ImageDataSet(DataSet):
         dataDirectoryName: Path,
         dataHome: Path | None = None,
         analysisHome: Path | None = None,
-        microscopeParametersName: str = None,
+        microscopeParametersName: str | None = None,
+        analysis_suffix: str | None = None,
     ):
         """Create a dataset for the specified raw data.
 
@@ -736,7 +745,7 @@ class ImageDataSet(DataSet):
                     file that specifies properties of the microscope used
                     to acquire the images represented by this ImageDataSet
         """
-        super().__init__(dataDirectoryName, dataHome, analysisHome)
+        super().__init__(dataDirectoryName, dataHome, analysisHome, analysis_suffix)
 
         if microscopeParametersName is not None:
             self._import_microscope_parameters(microscopeParametersName)
@@ -830,6 +839,7 @@ class MERFISHDataSet(ImageDataSet):
         fovList: str = None,
         skip: list = None,
         profile: bool = False,
+        analysis_suffix: str | None = None,
     ):
         """Create a MERFISH dataset for the specified raw data.
 
@@ -859,7 +869,7 @@ class MERFISHDataSet(ImageDataSet):
                     MERlin will be run on. This can be used to process a subset of
                     the data. If not given, the entire dataset is processed.
         """
-        super().__init__(dataDirectoryName, dataHome, analysisHome, microscopeParametersName)
+        super().__init__(dataDirectoryName, dataHome, analysisHome, microscopeParametersName, analysis_suffix)
 
         self.profile = profile
         self.dataOrganization = dataorganization.DataOrganization(self, dataOrganizationName, fovList, skip)
