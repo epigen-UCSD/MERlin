@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
+from merlin.analysis.partition import PartitionBarcodesFromMask
 from merlin.analysis.segment import CellposeSegment, FeatureSavingAnalysisTask, LinkCellsInOverlaps
 from merlin.plots import tools
 from merlin.plots._base import AbstractPlot
@@ -106,4 +107,27 @@ class CellVolumeHistogramPlot(AbstractPlot):
         metadata = link_cell_task.load_result("cell_metadata")
         fig = tools.plot_histogram(metadata, "volume")
         plt.xlabel("Cell volume (pixels)")
+        return fig
+
+
+class BarcodesAssignedToCellsPlot(AbstractPlot):
+    def __init__(self, plot_task) -> None:
+        super().__init__(plot_task)
+        self.set_required_tasks({"partition_task": PartitionBarcodesFromMask, "segment_task": CellposeSegment})
+        self.formats = [".png"]
+
+    def create_plot(self, **kwargs) -> plt.Figure:
+        partition_task = kwargs["tasks"]["partition_task"]
+        segment_task = kwargs["tasks"]["segment_task"]
+        partition_task.fragment = self.plot_task.dataSet.get_fovs()[0]
+        segment_task.fragment = self.plot_task.dataSet.get_fovs()[0]
+        barcodes = partition_task.load_result("barcodes")
+        image = segment_task.load_image(zIndex=10)
+        incells = barcodes[barcodes["cell_id"] != "000__0"]
+        outcells = barcodes[barcodes["cell_id"] == "000__0"]
+        fig = plt.figure(dpi=200, figsize=(10, 10))
+        plt.imshow(image, cmap="gray", vmax=np.percentile(image, 99))
+        plt.scatter(incells["x"], incells["y"], s=1, alpha=0.5, c="tab:blue", marker=".")
+        plt.scatter(outcells["x"], outcells["y"], s=1, alpha=0.5, c="tab:red", marker=".")
+        plt.axis("off")
         return fig
