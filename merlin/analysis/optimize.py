@@ -9,6 +9,18 @@ from merlin.data.codebook import Codebook
 from merlin.util import aberration, decoding, registration
 
 
+def OptimizeTask(dataset, analysis_path, parameters, name, fragment):
+    """A task that expands into a sequence of OptimizeIteration tasks."""
+    tasks = []
+    iteration_name = None
+    for i in range(1, parameters["iterations"] + 1):
+        if iteration_name:
+            parameters["previous_iteration"] = iteration_name
+        iteration_name = "OptimizeTask" if i == parameters["iterations"] else f"Optimize{i}"
+        tasks.append(OptimizeIteration(dataset, analysis_path, parameters, iteration_name, fragment))
+    return tasks
+
+
 class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
     """An analysis task for performing a single iteration of scale factor optimization."""
 
@@ -184,7 +196,6 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         colorPairDisplacements = {u: {v: [] for v in colors if v >= u} for u in colors}
 
         for fov in fov_list:
-
             fovBarcodes = barcodes[barcodes["fov"] == fov]
             zIndexes = np.unique(fovBarcodes["z"])
             for z in zIndexes:
@@ -211,7 +222,6 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                         and warpedImages.shape[1] - cBC["x"] > 10
                         and warpedImages.shape[2] - cBC["y"] > 10
                     ):
-
                         refinedPositions = np.array(
                             [registration.refine_position(warpedImages[i, :, :], cBC["x"], cBC["y"]) for i in onBits]
                         )

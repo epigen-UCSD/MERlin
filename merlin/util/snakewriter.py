@@ -78,7 +78,7 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *,
         args.append("-i {wildcards.i}")
     if task.dataSet.analysisHome / task.dataSet.dataSetName != task.dataSet.analysisPath:
         rootlen = len(str(task.dataSet.analysisHome / task.dataSet.dataSetName))
-        suffix = str(task.dataSet.analysisPath)[rootlen+1:]
+        suffix = str(task.dataSet.analysisPath)[rootlen + 1 :]
         args.append(f"--suffix {suffix}")
     args.append(task.dataSet.dataSetName)
     return " ".join(args)
@@ -113,22 +113,28 @@ class SnakefileGenerator:
         self.dataset = dataset
         self.python_path = python_path
 
-    def parse_parameters(self) -> dict[str, analysistask.AnalysisTask]:
+    def parse_parameters(self):
         """Create a dict of analysis tasks from the parameters."""
-        tasks = {}
+        self.tasks = {}
         for task_dict in self.parameters["analysis_tasks"]:
             module = importlib.import_module(task_dict["module"])
             analysis_class = getattr(module, task_dict["task"])
             parameters = task_dict.get("parameters")
             name = task_dict.get("analysis_name")
             task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name, fragment="")
-            if task.analysis_name in tasks:
-                raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
-            # TODO This should be more careful to not overwrite an existing
-            # analysis task that has already been run.
-            task.save()
-            tasks[task.analysis_name] = task
-        return tasks
+            if isinstance(task, list):
+                for t in task:
+                    self.generate_task(t)
+            else:
+                self.generate_task(task)
+
+    def generate_task(self, task) -> None:
+        if task.analysis_name in self.tasks:
+            raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
+        # TODO This should be more careful to not overwrite an existing
+        # analysis task that has already been run.
+        task.save()
+        self.tasks[task.analysis_name] = task
 
     def identify_terminal_tasks(self, tasks: dict[str, analysistask.AnalysisTask]) -> list[str]:
         """Find the terminal tasks."""
@@ -148,11 +154,11 @@ class SnakefileGenerator:
         Returns
             the path to the generated snakemake workflow
         """
-        tasks = self.parse_parameters()
-        terminal_tasks = self.identify_terminal_tasks(tasks)
-        terminal_input = ",".join([generate_output(tasks[x], full_output=True) for x in terminal_tasks])
+        self.parse_parameters()
+        terminal_tasks = self.identify_terminal_tasks(self.tasks)
+        terminal_input = ",".join([generate_output(self.tasks[x], full_output=True) for x in terminal_tasks])
         terminal_rule = f"rule all:\n  input: {terminal_input}".strip()
-        task_rules = [snakemake_rule(x, self.python_path) for x in tasks.values()]
+        task_rules = [snakemake_rule(x, self.python_path) for x in self.tasks.values()]
         snakemake_string = "\n\n".join([textwrap.dedent(terminal_rule).strip()] + task_rules)
 
         return self.dataset.save_workflow(snakemake_string)
