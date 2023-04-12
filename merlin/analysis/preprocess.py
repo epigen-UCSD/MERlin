@@ -41,7 +41,7 @@ class DeconvolutionPreprocess(Preprocess):
 
         self.add_dependencies({"warp_task": ["drifts"]})
         self.set_default_parameters(
-            {"highpass_sigma": 3, "decon_sigma": 2, "decon_iterations": 20, "codebook_index": 0}
+            {"highpass_sigma": 3, "decon_sigma": 2, "decon_iterations": 20, "codebook_index": 0, "lowpass_sigma": 0}
         )
 
         if "decon_filter_size" not in self.parameters:
@@ -115,6 +115,8 @@ class DeconvolutionPreprocess(Preprocess):
     def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
         deconFilterSize = self.parameters["decon_filter_size"]
 
+        if self.parameters["lowpass_sigma"] > 0:
+            inputImage = cv2.GaussianBlur(inputImage, (21, 21), self.parameters["lowpass_sigma"])
         filteredImage = self._high_pass_filter(inputImage)
         deconvolvedImage = deconvolve.deconvolve_lucyrichardson(
             filteredImage, deconFilterSize, self._deconSigma, self._deconIterations
