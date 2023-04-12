@@ -26,6 +26,7 @@ class PlotPerformance(analysistask.AnalysisTask):
             "filter_task",
             "optimize_task",
             "segment_task",
+            "link_cell_task",
             "sum_task",
             "partition_task",
             "global_align_task",

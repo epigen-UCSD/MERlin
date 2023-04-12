@@ -33,6 +33,7 @@ class YDriftViolinPlot(AbstractPlot):
         data = kwargs["metadata"]["driftplots/DriftCorrectionMetadata"].drifts
         return make_drift_violin_plot(data, "Y drift")
 
+
 class ZDriftViolinPlot(AbstractPlot):
     def __init__(self, plot_task):
         super().__init__(plot_task)
@@ -43,8 +44,9 @@ class ZDriftViolinPlot(AbstractPlot):
         data = kwargs["metadata"]["driftplots/DriftCorrectionMetadata"].drifts
         if "Z drift" in data:
             return make_drift_violin_plot(data, "Z drift")
-        else:
-            return None
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "Z-drift was not adjusted", ha="center", va="center", transform=ax.transAxes)
+        return fig
 
 
 class DriftPathPlot(AbstractPlot):
