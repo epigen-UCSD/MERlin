@@ -13,6 +13,8 @@ def OptimizeTask(dataset, analysis_path, parameters, name, fragment):
     """A task that expands into a sequence of OptimizeIteration tasks."""
     tasks = []
     iteration_name = None
+    if not name:
+        name = "OptimizeTask"
     for i in range(1, parameters["iterations"] + 1):
         if iteration_name:
             parameters["previous_iteration"] = iteration_name
