@@ -16,7 +16,7 @@ def OptimizeTask(dataset, analysis_path, parameters, name, fragment):
     for i in range(1, parameters["iterations"] + 1):
         if iteration_name:
             parameters["previous_iteration"] = iteration_name
-        iteration_name = "OptimizeTask" if i == parameters["iterations"] else f"Optimize{i}"
+        iteration_name = name if i == parameters["iterations"] else f"{name}{i}"
         tasks.append(OptimizeIteration(dataset, analysis_path, parameters, iteration_name, fragment))
     return tasks
 
