@@ -21,10 +21,7 @@ class Warp(analysistask.AnalysisTask):
     def setup(self, *, parallel: bool) -> None:
         super().setup(parallel=parallel)
 
-        self.set_default_parameters({
-            "write_fiducial_images": False,
-            "write_aligned_images": False
-        })
+        self.set_default_parameters({"write_fiducial_images": False, "write_aligned_images": False})
 
         self.writeAlignedFiducialImages = self.parameters["write_fiducial_images"]
 
@@ -99,7 +96,6 @@ class Warp(analysistask.AnalysisTask):
                         outputTif.save(transformedImage, photometric="MINISBLACK", metadata=imageDescription)
 
         if self.writeAlignedFiducialImages:
-
             fiducialImageDescription = self.dataSet.analysis_tiff_description(1, len(dataChannels))
 
             with self.dataSet.writer_for_analysis_images(self, "aligned_fiducial_images", fov) as outputTif:
@@ -155,10 +151,7 @@ class FiducialCorrelationWarp(Warp):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.set_default_parameters({
-            "highpass_sigma": 3,
-            "reference_round": 0
-        })
+        self.set_default_parameters({"highpass_sigma": 3, "reference_round": 0})
 
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         highPassSigma = self.parameters["highpass_sigma"]
@@ -189,16 +182,18 @@ class FiducialBeadWarp(Warp):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.set_default_parameters({
-            "delta": 2,
-            "delta_fit": 3,
-            "dbscan": True,
-            "max_disp": 200,
-            "tile_size": 512,
-            "filter_size": 15,
-            "threshold_sigma": 4,
-            "reference_round": 0
-        })
+        self.set_default_parameters(
+            {
+                "delta": 2,
+                "delta_fit": 3,
+                "dbscan": True,
+                "max_disp": 200,
+                "tile_size": 512,
+                "filter_size": 15,
+                "threshold_sigma": 4,
+                "reference_round": 0,
+            }
+        )
 
     def _filter(self, inputImage: np.ndarray) -> np.ndarray:
         im = inputImage.astype(np.float32)
@@ -356,12 +351,7 @@ class FiducialAlign(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.set_default_parameters({
-            "sz_norm": 20,
-            "sz": 500,
-            "nelems": 7,
-            "reference_round": 0
-        })
+        self.set_default_parameters({"sz_norm": 20, "sz": 500, "nelems": 7, "reference_round": 0})
 
         self.define_results("drifts", "tile_drifts")
 
@@ -478,3 +468,6 @@ class FiducialAlign(analysistask.AnalysisTask):
             tile_drifts.append(txyzs)
         self.drifts = np.array(drifts)
         self.tile_drifts = np.array(tile_drifts)
+
+    def metadata(self) -> dict:
+        return {f"drift_{i}": drifts for i, drifts in enumerate(self.drifts)}

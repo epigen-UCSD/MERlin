@@ -234,7 +234,7 @@ class CellposeSegment(analysistask.AnalysisTask):
             }
         )
 
-        self.define_results("mask", ("metadata", {"index": False}))
+        self.define_results("mask", ("cell_metadata", {"index": False}))
 
         self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
 
@@ -258,9 +258,9 @@ class CellposeSegment(analysistask.AnalysisTask):
         y_int = np.round(np.linspace(0, mask.shape[1] - 1, shape[1])).astype(int)
         return mask[x_int][:, y_int]
 
-    def load_metadata(self):
+    def load_cell_metadata(self):
         return self.dataSet.load_dataframe_from_csv(
-            "metadata", self.analysis_name, self.fragment, subdirectory="metadata"
+            "cell_metadata", self.analysis_name, self.fragment, subdirectory="cell_metadata"
         )
 
     def load_image(self, zIndex):
@@ -296,27 +296,30 @@ class CellposeSegment(analysistask.AnalysisTask):
                 mask = expand_labels(mask, self.parameters["dilate_cells"])
             else:
                 mask = np.array([expand_labels(frame, self.parameters["dilate_cells"]) for frame in mask])
-        metadata = pd.DataFrame(regionprops_table(mask, properties=["label", "area", "centroid"]))
+        cell_metadata = pd.DataFrame(regionprops_table(mask, properties=["label", "area", "centroid"]))
         columns = ["cell_id", "volume"]
         if mask.ndim == 3:
             columns.append("z")
         columns.extend(["x", "y"])
-        metadata.columns = columns
+        cell_metadata.columns = columns
         downscale = self.parameters["downscale_xy"]
-        metadata["x"] *= downscale
-        metadata["y"] *= downscale
+        cell_metadata["x"] *= downscale
+        cell_metadata["y"] *= downscale
         if mask.ndim == 3:
-            metadata["z"] *= self.parameters["downscale_z"]
-            metadata["volume"] *= downscale * downscale * self.parameters["downscale_z"]
+            cell_metadata["z"] *= self.parameters["downscale_z"]
+            cell_metadata["volume"] *= downscale * downscale * self.parameters["downscale_z"]
         else:
-            metadata["volume"] *= downscale * downscale
+            cell_metadata["volume"] *= downscale * downscale
         global_x, global_y = self.global_align_task.fov_coordinates_to_global(
-            self.fragment, metadata[["x", "y"]].T.to_numpy()
+            self.fragment, cell_metadata[["x", "y"]].T.to_numpy()
         )
-        metadata["global_x"] = global_x
-        metadata["global_y"] = global_y
+        cell_metadata["global_x"] = global_x
+        cell_metadata["global_y"] = global_y
         self.mask = mask
-        self.metadata = metadata
+        self.cell_metadata = cell_metadata
+
+    def metadata(self) -> dict:
+        return {"cells": len(self.cell_metadata)}
 
 
 class LinkCellsInOverlaps(analysistask.AnalysisTask):
@@ -440,19 +443,19 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         self.cell_mapping = self.get_cell_mapping()
         for fov in self.dataSet.get_fovs():
             self.segment_task.fragment = fov
-            metadata = self.segment_task.load_metadata()
-            metadata["cell_id"] = fov + "__" + metadata["cell_id"].astype(str)
-            metadata = metadata.rename(columns={"volume": "fov_volume"})
-            dfs.append(metadata)
-        metadata = pd.concat(dfs).set_index("cell_id")
-        metadata["overlap_volume"] = self.combine_overlap_volumes()
-        metadata["overlap_volume"] = metadata["overlap_volume"].fillna(0)
-        metadata["nonoverlap_volume"] = metadata["fov_volume"] - metadata["overlap_volume"]
-        metadata.index = [self.cell_mapping.get(cell_id, cell_id) for cell_id in metadata.index]
-        metadata.index.name = "cell_id"
-        metadata = metadata.groupby("cell_id").agg(
+            cell_metadata = self.segment_task.load_cell_metadata()
+            cell_metadata["cell_id"] = fov + "__" + cell_metadata["cell_id"].astype(str)
+            cell_metadata = cell_metadata.rename(columns={"volume": "fov_volume"})
+            dfs.append(cell_metadata)
+        cell_metadata = pd.concat(dfs).set_index("cell_id")
+        cell_metadata["overlap_volume"] = self.combine_overlap_volumes()
+        cell_metadata["overlap_volume"] = cell_metadata["overlap_volume"].fillna(0)
+        cell_metadata["nonoverlap_volume"] = cell_metadata["fov_volume"] - cell_metadata["overlap_volume"]
+        cell_metadata.index = [self.cell_mapping.get(cell_id, cell_id) for cell_id in cell_metadata.index]
+        cell_metadata.index.name = "cell_id"
+        cell_metadata = cell_metadata.groupby("cell_id").agg(
             {"global_x": "mean", "global_y": "mean", "overlap_volume": "mean", "nonoverlap_volume": "sum"}
         )
-        metadata["volume"] = metadata["overlap_volume"] + metadata["nonoverlap_volume"]
-        metadata = metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
-        self.cell_metadata = metadata
+        cell_metadata["volume"] = cell_metadata["overlap_volume"] + cell_metadata["nonoverlap_volume"]
+        cell_metadata = cell_metadata.drop(columns=["overlap_volume", "nonoverlap_volume"])
+        self.cell_metadata = cell_metadata

@@ -139,7 +139,7 @@ class AnalysisTask:
         self._fragment = value
 
     def has_finalize_step(self) -> bool:
-        return hasattr(self, "finalize_analysis")
+        return hasattr(self, "finalize_analysis") or (self.is_parallel() and hasattr(self, "metadata"))
 
     def save(self, *, overwrite: bool = False) -> None:
         """Save a copy of this AnalysisTask into the data set.
@@ -180,11 +180,7 @@ class AnalysisTask:
             if self.dataSet.profile:
                 profiler = cProfile.Profile()
                 profiler.enable()
-            if not self.fragment and self.has_finalize_step():
-                self.finalize_analysis()
-            else:
-                self.run_analysis()
-            self.save_result()
+            self.execute_task()
             if self.dataSet.profile:
                 profiler.disable()
                 stat_string = io.StringIO()
@@ -198,6 +194,19 @@ class AnalysisTask:
         except Exception:
             logger.exception("")
             self.dataSet.close_logger(self, self.fragment)
+
+    def execute_task(self):
+        if self.is_parallel() and not self.fragment:
+            if hasattr(self, "finalize_analysis"):
+                self.finalize_analysis()
+                self.save_result()
+            if hasattr(self, "metadata"):
+                self.aggregate_metadata()
+        else:
+            self.run_analysis()
+            if hasattr(self, "metadata"):
+                self.save_metadata()
+            self.save_result()
 
     def reset_analysis(self) -> None:
         """Remove files created by this analysis task and remove markers
@@ -272,6 +281,8 @@ class AnalysisTask:
         return len(self.fragment_list) > 0
 
     def result_path(self, result_name: str, extension: str) -> Path:
+        if not extension.startswith("."):
+            extension = f".{extension}"
         if self.fragment:
             return self.path / result_name / f"{result_name}_{self.fragment}{extension}"
         return self.path / f"{result_name}{extension}"
@@ -321,3 +332,19 @@ class AnalysisTask:
 
     def aggregate_result(self, result_name: str) -> list[Any]:
         return [self.load_result(result_name, fragment) for fragment in self.fragment_list]
+
+    def save_metadata(self) -> None:
+        path = self.result_path("metadata", ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            json.dump(self.metadata(), f, indent=4, default=str)
+
+    def aggregate_metadata(self) -> None:
+        metadata = {}
+        for fragment in self.fragment_list:
+            self.fragment = fragment
+            with self.result_path("metadata", ".json").open() as f:
+                metadata[fragment] = json.load(f)
+        self.fragment = ""
+        with self.result_path("metadata", ".json").open("w") as f:
+            json.dump(metadata, f, indent=4)
