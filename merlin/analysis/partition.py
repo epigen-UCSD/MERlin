@@ -1,7 +1,5 @@
-import pandas
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 from merlin.core import analysistask
 
@@ -20,7 +18,7 @@ class PartitionBarcodes(analysistask.AnalysisTask):
 
         self.define_results(("counts_per_cell", {"index": True}))
 
-    def get_partitioned_barcodes(self, fov: int = None) -> pandas.DataFrame:
+    def get_partitioned_barcodes(self, fov: int = None) -> pd.DataFrame:
         """Retrieve the cell by barcode matrixes calculated from this
         analysis task.
 
@@ -32,7 +30,7 @@ class PartitionBarcodes(analysistask.AnalysisTask):
             A pandas data frame containing the parsed barcode information.
         """
         if fov is None:
-            return pandas.concat([self.get_partitioned_barcodes(fov) for fov in self.dataSet.get_fovs()])
+            return pd.concat([self.get_partitioned_barcodes(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv("counts_per_cell", self.analysis_name, fov, index_col=0)
 
@@ -49,14 +47,14 @@ class PartitionBarcodes(analysistask.AnalysisTask):
             if fi == fovIntersections[0]:
                 currentFOVBarcodes = partialBC.copy(deep=True)
             else:
-                currentFOVBarcodes = pandas.concat([currentFOVBarcodes, partialBC], 0)
+                currentFOVBarcodes = pd.concat([currentFOVBarcodes, partialBC], 0)
 
         currentFOVBarcodes = currentFOVBarcodes.reset_index().copy(deep=True)
 
         sDB = self.assignment_task.get_feature_database()
         currentCells = sDB.read_features(fragmentIndex)
 
-        countsDF = pandas.DataFrame(
+        countsDF = pd.DataFrame(
             data=np.zeros((len(currentCells), barcodeCount)),
             columns=range(barcodeCount),
             index=[x.get_feature_id() for x in currentCells],
@@ -105,7 +103,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
 
         self.define_results(("barcodes", {"index": False}), "counts_per_cell")
 
-    def get_cell_by_gene_matrix(self, fov: str = None) -> pandas.DataFrame:
+    def get_cell_by_gene_matrix(self, fov: str = None) -> pd.DataFrame:
         """Retrieve the cell by barcode matrixes calculated from this
         analysis task.
 
@@ -117,7 +115,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
             A pandas data frame containing the parsed barcode information.
         """
         if fov is None:
-            return pandas.concat([self.get_cell_by_gene_matrix(fov) for fov in self.dataSet.get_fovs()])
+            return pd.concat([self.get_cell_by_gene_matrix(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv(
             "counts_per_cell", self.analysis_name, fov, subdirectory="counts_per_cell", index_col=0
@@ -125,7 +123,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
 
     def get_barcode_table(self, fov=None):
         if fov is None:
-            return pandas.concat([self.get_barcode_table(fov) for fov in self.dataSet.get_fovs()])
+            return pd.concat([self.get_barcode_table(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv(
             "barcodes", self.analysis_name, fov, subdirectory="barcodes", index_col=0
