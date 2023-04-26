@@ -91,8 +91,8 @@ class DataOrganization:
 
     def get_one_channel_per_round(self) -> NDArray[np.integer[NBitBase]]:
         """Get a list of data channels such that there is one (arbitrary) channel per imaging round."""
-        channels = self.data.groupby("imagingRound").first().channelName.to_numpy()
-        return self.data[self.data["channelName"].isin(channels)].index.to_numpy()
+        rounds = self.data.groupby("imagingRound").first().channelName.to_numpy()
+        return self.data[self.data["channelName"].isin(rounds)].index.to_numpy()
 
     def get_imaging_round_for_channel(self, data_channel: int) -> int:
         """Get the imaging round for a given data channel."""

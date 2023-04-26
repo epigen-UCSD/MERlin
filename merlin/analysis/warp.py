@@ -414,7 +414,7 @@ class FiducialAlign(analysistask.AnalysisTask):
         drifts = self.load_result("drifts")
         if channel is None:
             return drifts
-        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - 1]
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)]
 
     def get_tiles(self, image: np.ndarray, size: int = 256) -> list[np.ndarray]:
         """Split the image into tiles and return them as a list."""
@@ -464,10 +464,11 @@ class FiducialAlign(analysistask.AnalysisTask):
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
             txyz, txyzs = self.get_txyz(moving_image)
-            drifts.append(txyz)
-            tile_drifts.append(txyzs)
-        self.drifts = np.array(drifts)
-        self.tile_drifts = np.array(tile_drifts)
+            imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
+            drifts.append((imaging_round, txyz))
+            tile_drifts.append((imaging_round, txyzs))
+        self.drifts = np.array([x[1] for x in sorted(drifts)])
+        self.tile_drifts = np.array([x[1] for x in sorted(tile_drifts)])
 
     def metadata(self) -> dict:
         return {f"drift_{i}": drifts for i, drifts in enumerate(self.drifts)}
