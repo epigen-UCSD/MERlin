@@ -414,7 +414,13 @@ class FiducialAlign(analysistask.AnalysisTask):
         drifts = self.load_result("drifts")
         if channel is None:
             return drifts
-        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)]
+        lowest = np.inf
+        for c in self.dataSet.get_data_organization().get_data_channels():
+            imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(c)
+            if imaging_round > 0 and imaging_round < lowest:
+                lowest = imaging_round
+        lowest -= 1
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - lowest]
 
     def get_tiles(self, image: np.ndarray, size: int = 256) -> list[np.ndarray]:
         """Split the image into tiles and return them as a list."""
