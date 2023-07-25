@@ -1,6 +1,7 @@
-import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib import pyplot as plt
 
 from merlin.plots._base import AbstractPlot, PlotMetadata
 
@@ -65,6 +66,74 @@ class DriftPathPlot(AbstractPlot):
         )
         plt.xlabel("X drift")
         plt.ylabel("Y drift")
+        return fig
+    
+
+class AlignedBitImagesPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"warp_task": "all"})
+
+    def create_plot(self, **kwargs) -> plt.Figure:
+        fragment = self.plot_task.dataSet.get_fovs()[0]
+        align_task = self.plot_task.dataSet.load_analysis_task("FiducialAlign", fragment=fragment)
+        imgs = align_task.get_aligned_image_set(fragment)
+        colors = self.plot_task.dataSet.dataOrganization.get_data_colors()
+        channels = self.plot_task.dataSet.dataOrganization.get_channels_for_color(colors[0])
+        zpos = self.plot_task.dataSet.get_z_positions()
+        zindex = self.plot_task.dataSet.position_to_z_index(zpos[len(zpos) // 2])
+
+        nrows = int(np.ceil(len(channels) / 3))
+        fig, ax = plt.subplots(nrows, 2, figsize=(14.5, 7*nrows))
+        for i in range(nrows):
+            ind = i*3
+            inds = channels.index[ind:ind+3]
+
+            img1 = self.plot_task.dataSet.get_raw_image(inds[0], fragment, zindex)
+            if len(inds) > 1:
+                img2 = self.plot_task.dataSet.get_raw_image(inds[1], fragment, zindex)
+            else:
+                img2 = np.zeros_like(img1)
+            if len(inds) > 2:
+                img3 = self.plot_task.dataSet.get_raw_image(inds[2], fragment, zindex)
+            else:
+                img3 = np.zeros_like(img1)
+
+            color_img1 = np.moveaxis(np.array([
+                img1 / np.percentile(img1, 99),
+                img2 / np.percentile(img2, 99),
+                img3 / np.percentile(img3, 99)
+            ]), 0, -1)
+
+            img1 = imgs[inds[0], zindex, :, :]
+            if len(inds) > 1:
+                img2 = imgs[inds[1], zindex, :, :]
+            else:
+                img2 = np.zeros_like(img1)
+            if len(inds) > 2:
+                img3 = imgs[inds[2], zindex, :, :]
+            else:
+                img3 = np.zeros_like(img1)
+
+            color_img2 = np.moveaxis(np.array([
+                img1 / np.percentile(img1, 99),
+                img2 / np.percentile(img2, 99),
+                img3 / np.percentile(img3, 99)
+            ]), 0, -1)
+
+            ax[i, 0].imshow(color_img1)
+            ax[i, 0].axis("off")
+            ax[i, 0].text(0, 1, channels[inds[0]], color="#ff0000", transform=ax[i,0].transAxes, ha="left", va="top")
+            if len(inds) > 1:
+                ax[i, 0].text(0, 0.97, channels[inds[1]], color="#00ff00", transform=ax[i, 0].transAxes, ha="left", va="top")
+            if len(inds) > 2:
+                ax[i, 0].text(0, 0.94, channels[inds[2]], color="#0000ff", transform=ax[i, 0].transAxes, ha="left", va="top")
+            ax[i, 0].text(0.5, 1, "Raw images", color="#ffffff", transform=ax[i, 0].transAxes, ha="center", va="top")
+            ax[i, 1].imshow(color_img2)
+            ax[i, 1].text(0.5, 1, "Aligned images", color="#ffffff", transform=ax[i, 1].transAxes, ha="center", va="top")
+            ax[i, 1].axis("off")
+        fig.tight_layout()
+
         return fig
 
 

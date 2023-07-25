@@ -89,6 +89,12 @@ class DataOrganization:
         """
         return np.array(self.data.index)
 
+    def get_data_colors(self):
+        return self.data[~self.data["bitNumber"].isna()]["color"].unique()
+    
+    def get_channels_for_color(self, color):
+        return self.data[self.data["color"] == color]["channelName"]
+
     def get_one_channel_per_round(self) -> NDArray[np.integer[NBitBase]]:
         """Get a list of data channels such that there is one (arbitrary) channel per imaging round."""
         rounds = self.data.groupby("imagingRound").first().channelName.to_numpy()
