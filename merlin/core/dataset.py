@@ -1105,6 +1105,10 @@ class MERFISHDataSet(ImageDataSet):
                 if dist == 0 or f"{i}__{fov}" in self.overlaps or f"{fov}__{i}" in self.overlaps:
                     continue
                 diff = positions.loc[i] - positions.loc[fov]
+                if self.flipVertical:
+                    diff["X"] = -diff["X"]
+                if self.flipHorizontal:
+                    diff["Y"] = -diff["Y"]
                 _get_x_slice = functools.partial(self._get_overlap_slice, axis=0)
                 _get_y_slice = functools.partial(self._get_overlap_slice, axis=1)
                 self.overlaps[f"{i}__{fov}"] = (
