@@ -158,5 +158,6 @@ def run_with_snakemake(dataset: MERFISHDataSet, snakefile_path: Path, cores: int
         workdir=dataset.get_snakemake_path(),
         stats=snakefile_path.with_suffix(".stats"),
         lock=False,
+        keepgoing=True,
         **snakefile_parameters,
     )
