@@ -51,7 +51,13 @@ def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -
     """Generate the input string for a task."""
     if finalize:
         return generate_output(task, task, full_output=True)
-    input_tasks = [getattr(task, x) for x in task.dependencies]
+    input_tasks = []
+    for x in task.dependencies:
+        attr = getattr(task, x)
+        if isinstance(attr, analysistask.AnalysisTask):
+            input_tasks.append(attr)
+        else:
+            input_tasks.extend(attr)
     return ",".join([generate_output(x, task) for x in input_tasks]) if input_tasks else ""
 
 
@@ -59,7 +65,7 @@ def generate_message(task: analysistask.AnalysisTask, *, finalize: bool = False)
     """Generate the message string for a task."""
     message = f"Finalizing {task.analysis_name}" if finalize else f"Running {task.analysis_name}"
     if task.is_parallel() and not finalize:
-        message += " {wildcards.i}"
+        message += " on {wildcards.i}"
     return message
 
 
@@ -97,7 +103,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python")
         lines.extend(
             [
                 "",
-                f"rule {task.analysis_name}Finalize:",
+                f"rule {task.analysis_name}_Finalize:",
                 f"  input: {generate_input(task, finalize=True)}",
                 f"  output: {generate_output(task, finalize=True)}",
                 f"  message: '{generate_message(task, finalize=True)}'",
@@ -122,19 +128,19 @@ class SnakefileGenerator:
             parameters = task_dict.get("parameters")
             name = task_dict.get("analysis_name")
             task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name, fragment="")
-            if isinstance(task, list):
-                for t in task:
-                    self.generate_task(t)
-            else:
-                self.generate_task(task)
+            self.generate_task(task)
 
     def generate_task(self, task) -> None:
-        if task.analysis_name in self.tasks:
-            raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
-        # TODO This should be more careful to not overwrite an existing
-        # analysis task that has already been run.
-        task.save()
-        self.tasks[task.analysis_name] = task
+        if not isinstance(task, analysistask.AnalysisTask):
+            for t in task:
+                self.generate_task(t)
+        else:
+            if task.analysis_name in self.tasks:
+                raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
+            # TODO This should be more careful to not overwrite an existing
+            # analysis task that has already been run.
+            task.save()
+            self.tasks[task.analysis_name] = task
 
     def identify_terminal_tasks(self, tasks: dict[str, analysistask.AnalysisTask]) -> list[str]:
         """Find the terminal tasks."""

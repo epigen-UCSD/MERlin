@@ -136,9 +136,9 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
             barcodes["z"].round().astype(int), barcodes["y"].round().astype(int), barcodes["x"].round().astype(int)
         ]
 
-    def run_analysis(self):
-        codebook = self.filter_task.get_codebook()
-        barcodes = self.filter_task.get_barcode_database().get_barcodes(self.fragment)
+    def assign_barcodes(self, filter_task):
+        codebook = filter_task.get_codebook()
+        barcodes = filter_task.get_barcode_database().get_barcodes(self.fragment)
 
         # Trim barcodes in overlapping regions
         overlap_mask = self.dataSet.get_overlap_mask(self.fragment, trim=True)
@@ -148,15 +148,20 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
         barcodes["cell_id"] = self.apply_mask(barcodes, cell_mask).astype(str)
         barcodes["cell_id"] = self.fragment + "__" + barcodes["cell_id"]
 
-        # Save barcode table
         barcodes["gene"] = [codebook.get_name_for_barcode_index(i) for i in barcodes["barcode_id"]]
-        barcodes = barcodes[["gene", "cell_id", "fov", "x", "y", "z", "global_x", "global_y", "global_z"]]
-        self.barcodes = barcodes
+
+        return barcodes[["gene", "cell_id", "fov", "x", "y", "z", "global_x", "global_y", "global_z"]]
+
+    def run_analysis(self) -> None:
+        if isinstance(self.filter_task, list):
+            self.barcodes = pd.concat([self.assign_barcodes(task) for task in self.filter_task])
+        else:
+            self.barcodes = self.assign_barcodes(self.filter_task)
 
         # Make cell by gene matrix
-        matrix = pd.crosstab(barcodes["cell_id"], barcodes["gene"])
+        matrix = pd.crosstab(self.barcodes["cell_id"], self.barcodes["gene"])
         try:
-            matrix.drop(self.fragment + "__0")
+            matrix = matrix.drop(self.fragment + "__0")
         except KeyError:
             pass
         matrix.columns.name = None

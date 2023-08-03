@@ -18,7 +18,7 @@ def OptimizeTask(dataset, analysis_path, parameters, name, fragment):
     for i in range(1, parameters["iterations"] + 1):
         if iteration_name:
             parameters["previous_iteration"] = iteration_name
-        iteration_name = name if i == parameters["iterations"] else f"{name}{i}"
+        iteration_name = name if i == parameters["iterations"] else f"{name}_{i}"
         tasks.append(OptimizeIteration(dataset, analysis_path, parameters, iteration_name, fragment))
     return tasks
 
@@ -86,7 +86,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
         chromatic_corrector = aberration.RigidChromaticCorrector(chromatic_transformation, self.get_reference_color())
         self.chromatic_corrections = chromatic_transformation
-        preprocess_task = self.dataSet.load_analysis_task("DeconvolutionPreprocessGuo", fov_index)
+        preprocess_task = self.dataSet.load_analysis_task(self.parameters["preprocess_task"], fov_index)
         warped_images = preprocess_task.get_processed_image_set(
             fov_index, zIndex=z_index, chromaticCorrector=chromatic_corrector
         )

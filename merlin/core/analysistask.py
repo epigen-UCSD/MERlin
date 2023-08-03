@@ -76,9 +76,16 @@ class AnalysisTask:
     def __getattr__(self, attr):
         """Check if an unloaded dependency is being accessed and load it."""
         if attr in self.dependencies:
-            task = self.dataSet.load_analysis_task(self.parameters[attr], "")
-            if task.is_parallel() and self.fragment in task.fragment_list:
-                task.fragment = self.fragment
+            if isinstance(self.parameters[attr], str):
+                task = self.dataSet.load_analysis_task(self.parameters[attr], "")
+                if task.is_parallel() and self.fragment in task.fragment_list:
+                    task.fragment = self.fragment
+            else:
+                task = []
+                for t in self.parameters[attr]:
+                    task.append(self.dataSet.load_analysis_task(t, ""))
+                    if task[-1].is_parallel() and self.fragment in task[-1].fragment_list:
+                        task[-1].fragment = self.fragment
             setattr(self, attr, task)
             return task
         raise AttributeError(f"{attr} not an attribute of {self}")
