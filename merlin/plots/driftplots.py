@@ -73,6 +73,7 @@ class AlignedBitImagesPlot(AbstractPlot):
     def __init__(self, plot_task):
         super().__init__(plot_task)
         self.set_required_tasks({"warp_task": "all"})
+        self.formats = [".png"]
 
     def create_plot(self, **kwargs) -> plt.Figure:
         fragment = self.plot_task.dataSet.get_fovs()[0]
@@ -84,7 +85,7 @@ class AlignedBitImagesPlot(AbstractPlot):
         zindex = self.plot_task.dataSet.position_to_z_index(zpos[len(zpos) // 2])
 
         nrows = int(np.ceil(len(channels) / 3))
-        fig, ax = plt.subplots(nrows, 2, figsize=(14.5, 7*nrows))
+        fig, ax = plt.subplots(nrows, 2, figsize=(14.5, 7*nrows), dpi=200)
         for i in range(nrows):
             ind = i*3
             inds = channels.index[ind:ind+3]
@@ -149,9 +150,9 @@ class DriftCorrectionMetadata(PlotMetadata):
         self.warp_task.fragment = fragment
         drifts = self.warp_task.get_transformation()
         columns = ["X drift", "Y drift"]
-        if drifts.shape[1] == 3:
+        if len(list(drifts.values())[0]) == 3:
             columns = ["Z drift"] + columns
-        drifts = pd.DataFrame(drifts, columns=columns)
+        drifts = pd.DataFrame(drifts.values(), columns=columns)
         drifts["fov"] = fragment
         drifts = drifts.reset_index().rename(columns={"index": "Round"})
         drifts["Round"] += 1

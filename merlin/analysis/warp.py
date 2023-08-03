@@ -414,13 +414,7 @@ class FiducialAlign(analysistask.AnalysisTask):
         drifts = self.load_result("drifts")
         if channel is None:
             return drifts
-        lowest = np.inf
-        for c in self.dataSet.get_data_organization().get_data_channels():
-            imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(c)
-            if imaging_round > 0 and imaging_round < lowest:
-                lowest = imaging_round
-        lowest -= 1
-        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel) - lowest]
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)]
 
     def get_tiles(self, image: np.ndarray, size: int = 256) -> list[np.ndarray]:
         """Split the image into tiles and return them as a list."""
@@ -465,16 +459,14 @@ class FiducialAlign(analysistask.AnalysisTask):
         self.fixed_tiles = self.get_tiles(fixed_image, size=self.parameters["sz"])
         best = np.argsort([np.std(tile) for tile in self.fixed_tiles])[::-1]
         self.tiles_to_align = best[: min(self.parameters["nelems"], len(best))]
-        drifts = []
-        tile_drifts = []
+        self.drifts = {}
+        self.tile_drifts = {}
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
             txyz, txyzs = self.get_txyz(moving_image)
             imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
-            drifts.append((imaging_round, txyz))
-            tile_drifts.append((imaging_round, txyzs))
-        self.drifts = np.array([x[1] for x in sorted(drifts)])
-        self.tile_drifts = np.array([x[1] for x in sorted(tile_drifts)])
+            self.drifts[imaging_round] = txyz
+            self.tile_drifts[imaging_round] = txyzs
 
     def metadata(self) -> dict:
-        return {f"drift_{i}": drifts for i, drifts in enumerate(self.drifts)}
+        return {f"drift_{i}": drifts for i, drifts in self.drifts.items()}
