@@ -127,23 +127,9 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             }
         )
 
-    def _calculate_initial_scale_factors(self) -> np.ndarray:
-        bit_count = self.get_codebook().get_bit_count()
-
-        initial_scale_factors = np.zeros(bit_count)
-        pixel_histrograms = self.preprocess_task.get_pixel_histogram()
-        for i in range(bit_count):
-            cumulative_histogram = np.cumsum(pixel_histrograms[i])
-            cumulative_histogram = cumulative_histogram / cumulative_histogram[-1]
-            # Add two to match matlab code.
-            # TODO: Does +2 make sense? Used to be consistent with Matlab code
-            initial_scale_factors[i] = np.argmin(np.abs(cumulative_histogram - 0.9)) + 2
-
-        return initial_scale_factors
-
     def _get_previous_scale_factors(self) -> np.ndarray:
         if "previous_iteration" not in self.parameters:
-            return self._calculate_initial_scale_factors()
+            return np.ones(self.get_codebook().get_bit_count())
         return self.previous_iteration.load_result("scale_factors")
 
     def _get_previous_backgrounds(self) -> np.ndarray:
