@@ -3,7 +3,6 @@ import pandas
 import cv2
 from typing import Tuple
 from skimage import measure
-from sklearn.neighbors import NearestNeighbors
 
 from merlin.util import binary
 from merlin.data import codebook as mcodebook
@@ -106,10 +105,8 @@ class PixelBasedDecoder(object):
 
         normalizedPixelTraces = scaledPixelTraces / pixelMagnitudes[:, None]
 
-        neighbors = NearestNeighbors(n_neighbors=1, n_jobs=n_jobs)
-        neighbors.fit(self._decodingMatrix)
-
-        distances, indexes = neighbors.kneighbors(normalizedPixelTraces, return_distance=True)
+        indexes = np.argmax(np.dot(normalizedPixelTraces, self._decodingMatrix.T), axis=1)
+        distances = np.linalg.norm(self._decodingMatrix[indexes] - normalizedPixelTraces, axis=1)
 
         indexes[distances > distanceThreshold] = -1
         decodedImage = np.reshape(indexes, filteredImages.shape[1:])
