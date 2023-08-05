@@ -155,7 +155,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         Returns:
             The chromatic corrector.
         """
-        return aberration.RigidChromaticCorrector(self._get_chromatic_transformations(), self.get_reference_color())
+        return aberration.RigidChromaticCorrector(self.load_result("chromatic_corrections"), self.get_reference_color())
 
     def _get_chromatic_transformations(self) -> dict[str, dict[str, transform.SimilarityTransform]]:
         """Get the estimated chromatic corrections from this optimization iteration.
