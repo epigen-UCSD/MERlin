@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import scanpy as sc
+from pandas.api.types import is_numeric_dtype
 
 import merlin
 
@@ -347,11 +348,22 @@ class AnalysisTask:
             json.dump(self.metadata(), f, indent=4, default=str)
 
     def aggregate_metadata(self) -> None:
-        metadata = {}
+        metadata = []
         for fragment in self.fragment_list:
             self.fragment = fragment
             with self.result_path("metadata", ".json").open() as f:
-                metadata[fragment] = json.load(f)
+                metadata.append(json.load(f))
+        metadata = pd.DataFrame(metadata)
+        aggdata = {
+            column: {
+                "min": metadata[column].min(),
+                "max": metadata[column].max(),
+                "mean": metadata[column].mean(),
+                "median": metadata[column].median(),
+                "std": metadata[column].std(),
+            }
+            for column in metadata.columns if is_numeric_dtype(metadata[column])
+        }
         self.fragment = ""
         with self.result_path("metadata", ".json").open("w") as f:
-            json.dump(metadata, f, indent=4)
+            json.dump(aggdata, f, indent=4, default=float)
