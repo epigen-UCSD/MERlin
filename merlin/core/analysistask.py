@@ -6,13 +6,13 @@ import os
 import pickle
 import pstats
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
-from pandas.api.types import is_numeric_dtype
 
 import merlin
 
@@ -345,25 +345,35 @@ class AnalysisTask:
         path = self.result_path("metadata", ".json")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w") as f:
-            json.dump(self.metadata(), f, indent=4, default=str)
+            json.dump(self.metadata(), f, indent=4, default=float)
 
     def aggregate_metadata(self) -> None:
-        metadata = []
+        def combine_metadata(metadata, aggdata, prefix=""):
+            for k, v in metadata.items():
+                if isinstance(v, dict):
+                    combine_metadata(v, aggdata, prefix=f"{k}/")
+                else:
+                    aggdata[prefix + k].append(v)
+
+        metadata = defaultdict(list)
         for fragment in self.fragment_list:
             self.fragment = fragment
             with self.result_path("metadata", ".json").open() as f:
-                metadata.append(json.load(f))
-        metadata = pd.DataFrame(metadata)
-        aggdata = {
-            column: {
-                "min": metadata[column].min(),
-                "max": metadata[column].max(),
-                "mean": metadata[column].mean(),
-                "median": metadata[column].median(),
-                "std": metadata[column].std(),
-            }
-            for column in metadata.columns if is_numeric_dtype(metadata[column])
-        }
+                combine_metadata(json.load(f), metadata)
+
+        aggdata = {}
+        for k, v in metadata.items():
+            data = aggdata
+            for token in k.split("/"):
+                if token not in data:
+                    data[token] = {}
+                data = data[token]
+            data["min"] = np.min(v)
+            data["max"] = np.max(v)
+            data["mean"] = np.mean(v)
+            data["median"] = np.median(v)
+            data["std"] = np.std(v)
+
         self.fragment = ""
         with self.result_path("metadata", ".json").open("w") as f:
             json.dump(aggdata, f, indent=4, default=float)

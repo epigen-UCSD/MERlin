@@ -469,4 +469,9 @@ class FiducialAlign(analysistask.AnalysisTask):
             self.tile_drifts[imaging_round] = txyzs
 
     def metadata(self) -> dict:
-        return {f"drift_{i}": drifts for i, drifts in self.drifts.items()}
+        metadata = {}
+        for i, drifts in self.drifts.items():
+            metadata[f"Round {i}"] = {"x drift": drifts[-2], "y drift": drifts[-1]}
+            if len(drifts) > 2:
+                metadata[f"Round {i}"]["z drift"] = drifts[0]
+        return metadata
