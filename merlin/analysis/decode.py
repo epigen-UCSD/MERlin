@@ -201,24 +201,18 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         minimumArea = self.parameters["minimum_area"]
 
         self.get_barcode_database().write_barcodes(
-            pandas.concat(
-                [
-                    decoder.extract_barcodes_with_index(
-                        i,
-                        decodedImage,
-                        pixelMagnitudes,
-                        pixelTraces,
-                        distances,
-                        fov,
-                        self.cropWidth,
-                        zIndex,
-                        self.global_align_task,
-                        minimumArea,
-                    )
-                    for i in range(self.get_codebook().get_barcode_count())
-                ]
+            decoder.extract_all_barcodes(
+                decodedImage,
+                pixelMagnitudes,
+                pixelTraces,
+                distances,
+                fov,
+                self.cropWidth,
+                zIndex,
+                self.global_align_task,
+                minimumArea
             ),
-            fov=fov,
+            fov=fov
         )
 
     def _remove_z_duplicate_barcodes(self, bc):

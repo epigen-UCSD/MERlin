@@ -106,14 +106,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         # the barcodedb should be made more general
         crop_width = self.parameters["crop_width"]
         self.get_barcode_database().write_barcodes(
-            pd.concat(
-                [
-                    decoder.extract_barcodes_with_index(
-                        i, di, pm, npt, d, fov_index, crop_width, z_index, minimumArea=area_threshold
-                    )
-                    for i in range(codebook.get_barcode_count())
-                ]
-            ),
+            decoder.extract_all_barcodes(di, pm, npt, d, fov_index, crop_width, z_index, minimumArea=area_threshold),
             fov=self.fragment,
         )
 

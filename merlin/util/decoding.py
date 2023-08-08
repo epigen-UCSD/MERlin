@@ -120,9 +120,8 @@ class PixelBasedDecoder(object):
 
         return decodedImage, pixelMagnitudes, normalizedPixelTraces, distances
 
-    def extract_barcodes_with_index(
+    def extract_all_barcodes(
         self,
-        barcodeIndex: int,
         decodedImage: np.ndarray,
         pixelMagnitudes: np.ndarray,
         pixelTraces: np.ndarray,
@@ -159,9 +158,18 @@ class PixelBasedDecoder(object):
             a pandas dataframe containing all the barcodes decoded with the
                 specified barcode index
         """
-        properties = measure.regionprops(
-            measure.label(decodedImage == barcodeIndex), intensity_image=pixelMagnitudes, cache=False
-        )
+        classes = set(decodedImage.flat) - {-1}
+        labels = np.zeros_like(decodedImage)
+        nlabels = 0
+        barcodeIndex = []
+        for k in classes:
+            class_labels = measure.label(decodedImage == k)
+            class_nlabels = np.max(class_labels)
+            mask = (class_labels != 0)
+            labels[mask] = class_labels[mask] + nlabels
+            nlabels += class_nlabels
+            barcodeIndex.extend(np.repeat(k, class_nlabels))
+        properties = measure.regionprops(labels, intensity_image=pixelMagnitudes, cache=False)
         is3D = len(pixelTraces.shape) == 4
 
         columnNames = [
