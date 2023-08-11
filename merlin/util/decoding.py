@@ -47,8 +47,7 @@ class PixelBasedDecoder(object):
         backgrounds: np.ndarray = None,
         distanceThreshold: float = 0.5176,
         magnitudeThreshold: float = 1,
-        lowPassSigma: float = 1,
-        n_jobs: int = 1,
+        lowPassSigma: float = 1
     ):
         """Assign barcodes to the pixels in the provided image stock.
 

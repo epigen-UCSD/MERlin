@@ -62,7 +62,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                 "remove_z_duplicated_barcodes": False,
                 "z_duplicate_zPlane_threshold": 1,
                 "z_duplicate_xy_pixel_threshold": np.sqrt(2),
-                "n_jobs": 1,
             }
         )
 
@@ -125,7 +124,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                         backgrounds,
                         lowPassSigma=lowPassSigma,
                         distanceThreshold=self.parameters["distance_threshold"],
-                        n_jobs=self.parameters["n_jobs"],
                     )
 
                     normalizedPixelTraces[zIndex, :, :, :] = npt
@@ -151,7 +149,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
     ):
-
         imageSet = preprocessTask.get_processed_image_set(fov, zIndex, chromaticCorrector)
         imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
@@ -161,7 +158,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
             backgrounds,
             lowPassSigma=self.parameters["lowpass_sigma"],
             distanceThreshold=self.parameters["distance_threshold"],
-            n_jobs=self.parameters["n_jobs"],
         )
         self._extract_and_save_barcodes(decoder, di, pm, npt, d, fov, zIndex)
 
@@ -178,9 +174,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         imageDescription = self.dataSet.analysis_tiff_description(zPositionCount, 3)
         with self.dataSet.writer_for_analysis_images(self, "decoded", fov) as outputTif:
             for i in range(zPositionCount):
-                outputTif.save(
-                    decodedImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription
-                )
+                outputTif.save(decodedImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription)
                 outputTif.save(
                     magnitudeImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription
                 )
@@ -210,9 +204,9 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                 self.cropWidth,
                 zIndex,
                 self.global_align_task,
-                minimumArea
+                minimumArea,
             ),
-            fov=fov
+            fov=fov,
         )
 
     def _remove_z_duplicate_barcodes(self, bc):
@@ -362,7 +356,6 @@ class SpotDecode(analysistask.AnalysisTask):
                 )[:, np.newaxis]
                 hn = np.mean(im_centers__ * im_psf_, axis=-1)
             else:
-
                 # im_sm = im_[tuple([slice(x_-sz,x_+sz+1) for x_ in Xc])]
                 sz = delta_fit
                 Xft = (np.indices([2 * sz + 1] * 3) - sz).reshape([3, -1]).T

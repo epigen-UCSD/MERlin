@@ -39,7 +39,6 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                 "optimize_background": False,
                 "optimize_chromatic_correction": False,
                 "crop_width": 0,
-                "n_jobs": 1,
             }
         )
 
@@ -94,9 +93,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         decoder = decoding.PixelBasedDecoder(codebook)
         area_threshold = self.parameters["area_threshold"]
         decoder.refactorAreaThreshold = area_threshold
-        di, pm, npt, d = decoder.decode_pixels(
-            warped_images, scale_factors, backgrounds, n_jobs=self.parameters["n_jobs"]
-        )
+        di, pm, npt, d = decoder.decode_pixels(warped_images, scale_factors, backgrounds)
 
         self.scale_factors, self.background_factors, self.barcode_counts = decoder.extract_refactors(
             di, pm, npt, extractBackgrounds=self.parameters["optimize_background"]
