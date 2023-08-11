@@ -96,9 +96,6 @@ class DeconvolutionPreprocess(Preprocess):
         hpImage = imagefilters.high_pass_filter(inputImage, highPassFilterSize, self._highPassSigma)
         return hpImage.astype(np.float32)
 
-    def run_analysis(self):
-        pass
-
     def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
         deconFilterSize = self.parameters["decon_filter_size"]
 

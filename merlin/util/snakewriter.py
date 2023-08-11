@@ -54,6 +54,8 @@ def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -
     input_tasks = []
     for x in task.dependencies:
         attr = getattr(task, x)
+        if attr.is_invisible():
+            continue
         if isinstance(attr, analysistask.AnalysisTask):
             input_tasks.append(attr)
         else:
@@ -137,6 +139,8 @@ class SnakefileGenerator:
         else:
             if task.analysis_name in self.tasks:
                 raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
+            if task.is_invisible():
+                return  # This task does not perform any computation or produce output
             # TODO This should be more careful to not overwrite an existing
             # analysis task that has already been run.
             task.save()

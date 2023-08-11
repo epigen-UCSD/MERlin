@@ -288,6 +288,17 @@ class AnalysisTask:
         """Determine if this analysis task uses multiple cores."""
         return len(self.fragment_list) > 0
 
+    def is_invisible(self) -> bool:
+        """Invisible tasks do not need to be run in snakemake.
+
+        A task is invisible if it doesn't need to pre-compute any result to save. For
+        example, a task that performs image preprocessing may be called by the Decode
+        task to preprocess the image before decoding, but nothing needs to be computed
+        before the Decode step. This is currently determined by checking if the task has
+        implemented the run_analysis function.
+        """
+        return not hasattr(self, "run_analysis")
+
     def result_path(self, result_name: str, extension: str) -> Path:
         if not extension.startswith("."):
             extension = f".{extension}"

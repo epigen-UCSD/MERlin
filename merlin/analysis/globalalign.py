@@ -111,10 +111,6 @@ class SimpleGlobalAlignment(GlobalAlignment):
     def setup(self) -> None:
         super().setup(parallel=False)
 
-    def run_analysis(self):
-        # This analysis task does not need computation
-        pass
-
     def fov_coordinates_to_global(self, fov, fovCoordinates):
         fovStart = self.dataSet.get_fov_offset(fov)
         micronsPerPixel = self.dataSet.get_microns_per_pixel()
