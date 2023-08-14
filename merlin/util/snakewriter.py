@@ -139,11 +139,11 @@ class SnakefileGenerator:
         else:
             if task.analysis_name in self.tasks:
                 raise Exception("Analysis tasks must have unique names. " + task.analysis_name + " is redundant.")
-            if task.is_invisible():
-                return  # This task does not perform any computation or produce output
             # TODO This should be more careful to not overwrite an existing
             # analysis task that has already been run.
             task.save()
+            if task.is_invisible():
+                return  # This task does not perform any computation or produce output
             self.tasks[task.analysis_name] = task
 
     def identify_terminal_tasks(self, tasks: dict[str, analysistask.AnalysisTask]) -> list[str]:
