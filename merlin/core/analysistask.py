@@ -5,6 +5,7 @@ import json
 import os
 import pickle
 import pstats
+import resource
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -179,8 +180,8 @@ class AnalysisTask:
                 already running or if overwrite is not True and this analysis
                 task has already completed or exited with an error.
         """
-        logger = self.dataSet.get_logger(self, self.fragment)
-        logger.info(f"Beginning {self.analysis_name} {self.fragment}")
+        self.logger = self.dataSet.get_logger(self, self.fragment)
+        self.logger.info(f"Beginning {self.analysis_name} {self.fragment}")
         try:
             if overwrite:
                 self.reset_analysis()
@@ -195,13 +196,15 @@ class AnalysisTask:
                 stats = pstats.Stats(profiler, stream=stat_string)
                 stats.sort_stats("time")
                 stats.print_stats()
-                logger.info(stat_string.getvalue())
+                self.logger.info(stat_string.getvalue())
             self.record_status("done")
-            logger.info(f"Completed {self.analysis_name} {self.fragment}")
+            self.logger.info(f"Peak memory usage: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}")
+            self.logger.info(f"Completed {self.analysis_name} {self.fragment}")
             self.dataSet.close_logger(self, self.fragment)
-        except Exception:
-            logger.exception("")
+        except Exception as e:
+            self.logger.exception(e)
             self.dataSet.close_logger(self, self.fragment)
+            raise e
 
     def execute_task(self):
         if self.is_parallel() and not self.fragment:
