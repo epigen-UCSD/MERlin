@@ -154,7 +154,7 @@ class SnakefileGenerator:
 
         for x, a in tasks.items():
             for d in a.dependencies:
-                graph.add_edge(d, x)
+                graph.add_edge(a.parameters[d], x)
 
         return [k for k, v in graph.out_degree if v == 0]
 
