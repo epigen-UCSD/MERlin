@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas
@@ -222,6 +223,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
         updated = False
         while not all(self.complete_fragments):
+            time.sleep(10)
             if self.intensity_bins is None or self.blank_counts is None or self.coding_counts is None:
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
                     if not pending_fragments[i] and self.decode_task.is_complete():
