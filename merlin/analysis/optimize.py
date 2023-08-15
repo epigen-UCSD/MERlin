@@ -48,8 +48,6 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         self.define_results("scale_factors", "background_factors", "chromatic_corrections", final=True)
 
         if "fov_index" in self.parameters:
-            logger = self.dataSet.get_logger(self)
-            logger.info("Setting fov_per_iteration to length of fov_index")
             self.parameters["fov_per_iteration"] = len(self.parameters["fov_index"])
         else:
             path = self.path / "select_frame"
