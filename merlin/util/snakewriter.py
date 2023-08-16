@@ -54,9 +54,9 @@ def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -
     input_tasks = []
     for x in task.dependencies:
         attr = getattr(task, x)
-        if attr.is_invisible():
-            continue
         if isinstance(attr, analysistask.AnalysisTask):
+            if attr.is_invisible():
+                continue
             input_tasks.append(attr)
         else:
             input_tasks.extend(attr)
@@ -154,7 +154,11 @@ class SnakefileGenerator:
 
         for x, a in tasks.items():
             for d in a.dependencies:
-                graph.add_edge(a.parameters[d], x)
+                if isinstance(a.parameters[d], list):
+                    for t in a.parameters[d]:
+                        graph.add_edge(t, x)
+                else:
+                    graph.add_edge(a.parameters[d], x)
 
         return [k for k, v in graph.out_degree if v == 0]
 
