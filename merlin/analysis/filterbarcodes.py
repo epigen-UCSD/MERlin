@@ -204,10 +204,13 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         self.complete_fragments = self.dataSet.load_numpy_analysis_result_if_available(
             "complete_fragments", self, [False] * len(self.dataSet.get_fovs())
         )
-        pending_fragments = [
-            self.decode_task.is_complete() and not self.complete_fragments[i]
-            for i, fragment in enumerate(self.dataSet.get_fovs())
-        ]
+        pending_fragments = []
+        for i, fragment in enumerate(self.dataSet.get_fovs()):
+            self.decode_task.fragment = fragment
+            if self.decode_task.is_complete() and not self.complete_fragments[i]:
+                pending_fragments.append(True)
+            else:
+                pending_fragments.append(False)
 
         self.area_bins = self.dataSet.load_numpy_analysis_result_if_available("area_bins", self, np.arange(1, 35))
         self.distance_bins = self.dataSet.load_numpy_analysis_result_if_available(
@@ -226,6 +229,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
             time.sleep(10)
             if self.intensity_bins is None or self.blank_counts is None or self.coding_counts is None:
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
+                    self.decode_task.fragment = fragment
                     if not pending_fragments[i] and self.decode_task.is_complete():
                         pending_fragments[i] = self.decode_task.is_complete()
 
@@ -254,6 +258,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
             else:
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
+                    self.decode_task.fragment = fragment
                     if not self.complete_fragments[i] and self.decode_task.is_complete():
                         barcodes = barcodeDB.get_barcodes(
                             fragment, columnList=["barcode_id", "mean_intensity", "min_distance", "area"]
