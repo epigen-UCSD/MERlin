@@ -31,6 +31,7 @@ class PlotEngine:
             tasks: a dictionary containing references to the analysis
                 tasks to use for plotting results.
         """
+        self.plot_task = plot_task
         self.tasks = tasks
         available_plots = [x(plot_task) for x in get_available_plots()]
         self.plots = [x for x in available_plots if x.is_relevant(tasks)]
@@ -64,6 +65,8 @@ class PlotEngine:
         complete_metadata = [k for k, v in self.metadata.items() if v.is_complete()]
         ready_plots = [p for p in incomplete_plots if p.is_ready(complete_tasks, complete_metadata)]
         for p in ready_plots:
+            self.plot_task.logger.info(f"Plotting {p.figure_name()}")
             p.plot(self.tasks, self.metadata)
+            self.plot_task.logger.info(f"Done plotting {p.figure_name()}")
 
         return len([p for p in self.plots if not p.is_complete()]) == 0
