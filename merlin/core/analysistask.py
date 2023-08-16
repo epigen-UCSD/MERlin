@@ -273,6 +273,8 @@ class AnalysisTask:
 
     def is_complete(self) -> bool:
         """Determine if this analysis has completed successfully."""
+        if self.is_invisible():
+            return True
         if self.is_parallel() and not self.fragment:
             if self.status("done"):
                 return True
