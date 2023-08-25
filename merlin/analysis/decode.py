@@ -155,9 +155,28 @@ class Decode(BarcodeSavingParallelAnalysisTask):
             bcDB.empty_database(self.fragment)
             bcDB.write_barcodes(bc, fov=self.fragment)
 
-    #    def metadata(self) -> dict:
-    #        barcodes = self.get_barcode_database()
-    #        return {"total": len(barcodes.get_barcodes(fov=self.fragment))}
+    def metadata(self) -> dict:
+        pixels = np.prod(self.dataSet.get_image_dimensions()) * len(self.dataSet.get_z_positions())
+        blanks = self.barcodes[np.isin(self.barcodes[:, -1], self.get_codebook().get_blank_indexes())]
+        genes = self.barcodes[np.isin(self.barcodes[:, -1], self.get_codebook().get_coding_indexes())]
+        return {
+            "total": len(self.barcodes),
+            "blanks": len(blanks),
+            "genes": len(genes),
+            "total_pixel_fraction": self.barcodes[:, 2].sum() / pixels,
+            "blank_pixel_fraction": blanks[:, 2].sum() / pixels,
+            "gene_pixel_fraction": genes[:, 2].sum() / pixels,
+            "blank_area": blanks[:, 2].mean(),
+            "gene_area": genes[:, 2].mean(),
+            "blank_mean_intensity": blanks[:, 0].mean(),
+            "gene_mean_intensity": genes[:, 0].mean(),
+            "blank_max_intensity": blanks[:, 1].mean(),
+            "gene_max_intensity": genes[:, 1].mean(),
+            "blank_min_distance": blanks[:, 4].mean(),
+            "gene_min_distance": genes[:, 4].mean(),
+            "blank_mean_distance": blanks[:, 3].mean(),
+            "gene_mean_distance": genes[:, 3].mean(),
+        }
 
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder

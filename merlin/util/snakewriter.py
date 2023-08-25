@@ -17,7 +17,6 @@ def generate_output(
     task: analysistask.AnalysisTask,
     reftask: analysistask.AnalysisTask | None = None,
     *,
-    full_output: bool = False,
     finalize: bool = False,
 ) -> str:
     """Generate the output string for a task.
@@ -31,7 +30,7 @@ def generate_output(
     """
     if not task.is_parallel() or finalize:
         return f"'{task.status_file('done')}'"
-    if full_output:
+    if task == reftask:
         return expand_as_string(task)
     depends_all = False
     if reftask:
@@ -50,7 +49,7 @@ def generate_output(
 def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -> str:
     """Generate the input string for a task."""
     if finalize:
-        return generate_output(task, task, full_output=True)
+        return generate_output(task, task)
     input_tasks = []
     for x in task.dependencies:
         attr = getattr(task, x)
@@ -148,19 +147,20 @@ class SnakefileGenerator:
 
     def identify_terminal_tasks(self, tasks: dict[str, analysistask.AnalysisTask]) -> list[str]:
         """Find the terminal tasks."""
-        graph = networkx.DiGraph()
-        for x in tasks:
-            graph.add_node(x)
-
+        all_tasks = set()
+        seen = set()
         for x, a in tasks.items():
+            all_tasks.add(x)
+            if a.has_finalize_step():
+                all_tasks.add(f"{x}_Finalize")
             for d in a.dependencies:
                 if isinstance(a.parameters[d], list):
                     for t in a.parameters[d]:
-                        graph.add_edge(t, x)
+                        seen.add(t)
                 else:
-                    graph.add_edge(a.parameters[d], x)
-
-        return [k for k, v in graph.out_degree if v == 0]
+                    seen.add(a.parameters[d])
+        terminal = list(all_tasks - seen)
+        return [x.replace("_Finalize", "") if x.endswith("_Finalize") else x for x in terminal]
 
     def generate_workflow(self) -> str:
         """Generate a snakemake workflow for the analysis parameters.
@@ -170,7 +170,7 @@ class SnakefileGenerator:
         """
         self.parse_parameters()
         terminal_tasks = self.identify_terminal_tasks(self.tasks)
-        terminal_input = ",".join([generate_output(self.tasks[x], full_output=True) for x in terminal_tasks])
+        terminal_input = ",".join([generate_output(self.tasks[x], finalize=True) for x in terminal_tasks])
         terminal_rule = f"rule all:\n  input: {terminal_input}".strip()
         task_rules = [snakemake_rule(x, self.python_path) for x in self.tasks.values()]
         snakemake_string = "\n\n".join([textwrap.dedent(terminal_rule).strip()] + task_rules)
