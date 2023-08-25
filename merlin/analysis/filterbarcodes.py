@@ -312,3 +312,19 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
         currentBarcodes = self.decode_task.load_result("barcodes", self.fragment)
 
         self.barcodes = self.adaptive_task.extract_barcodes_with_threshold(threshold, currentBarcodes)
+
+    def metadata(self) -> dict:
+        pixels = np.prod(self.dataSet.get_image_dimensions()) * len(self.dataSet.get_z_positions())
+        blanks = self.barcodes[np.isin(self.barcodes[:, -1], self.get_codebook().get_blank_indexes())]
+        genes = self.barcodes[np.isin(self.barcodes[:, -1], self.get_codebook().get_coding_indexes())]
+        unfiltered = self.decode_task.load_result("barcodes", self.fragment)
+        unfiltered_genes = unfiltered[np.isin(unfiltered[:, -1], self.get_codebook().get_coding_indexes())]
+        return {
+            "total": len(self.barcodes),
+            "blanks": len(blanks),
+            "genes": len(genes),
+            "gene_pixel_fraction": genes[:, 2].sum() / pixels,
+            "filtered_fraction": 1 - (len(self.barcodes) / len(unfiltered)),
+            "filtered_gene_fraction": 1 - (len(genes) / len(unfiltered_genes)),
+            "filtered_pixel_fraction": 1 - (genes[:, 2].sum() / unfiltered_genes[:, 2].sum())
+        }
