@@ -1,12 +1,12 @@
-import numpy as np
-import pandas as pd
-import cv2
 from typing import Tuple
-from scipy import ndimage
+
+import cv2
+import numba
+import numpy as np
 from skimage import measure
 
-from merlin.util import binary
 from merlin.data import codebook as mcodebook
+from merlin.util import binary
 
 """
 Utility functions for pixel based decoding.
@@ -19,6 +19,71 @@ def normalize(x):
         return x / norm
     else:
         return x
+
+
+@numba.njit
+def sum_labels(labels, weights):
+    return np.bincount(labels.ravel(), weights=weights.ravel())[1:]
+
+
+@numba.njit
+def label_image_2d(decoded_image):
+    xdim, ydim = decoded_image.shape
+    labels = np.zeros_like(decoded_image, dtype=np.uint32)
+    current_label = 0
+    barcode_index = []
+    stack = []
+    for idx in zip(*np.where(decoded_image >= 0)):
+        if labels[idx] == 0:
+            current_label += 1
+            barcode_index.append(decoded_image[idx])
+            stack.append(idx)
+            while stack:
+                x, y = stack.pop()
+                if decoded_image[x, y] != decoded_image[idx] or labels[x, y] != 0:
+                    continue  # already visited or not part of this group
+                labels[x, y] = current_label
+                if x > 0:
+                    stack.append((x - 1, y))
+                if x + 1 < xdim:
+                    stack.append((x + 1, y))
+                if y > 0:
+                    stack.append((x, y - 1))
+                if y + 1 < ydim:
+                    stack.append((x, y + 1))
+    return labels, current_label, barcode_index
+
+
+@numba.njit
+def label_image_3d(decoded_image):
+    zdim, xdim, ydim = decoded_image.shape
+    labels = np.zeros_like(decoded_image, dtype=np.uint32)
+    current_label = 0
+    barcode_index = []
+    stack = []
+    for idx in zip(*np.where(decoded_image >= 0)):
+        if labels[idx] == 0:
+            current_label += 1
+            barcode_index.append(decoded_image[idx])
+            stack.append(idx)
+            while stack:
+                z, x, y = stack.pop()
+                if decoded_image[z, x, y] != decoded_image[idx] or labels[z, x, y] != 0:
+                    continue  # already visited or not part of this group
+                labels[z, x, y] = current_label
+                if z > 0:
+                    stack.append((z - 1, x, y))
+                if z + 1 < zdim:
+                    stack.append((z + 1, x, y))
+                if x > 0:
+                    stack.append((z, x - 1, y))
+                if x + 1 < xdim:
+                    stack.append((z, x + 1, y))
+                if y > 0:
+                    stack.append((z, x, y - 1))
+                if y + 1 < ydim:
+                    stack.append((z, x, y + 1))
+    return labels, current_label, barcode_index
 
 
 class PixelBasedDecoder(object):
@@ -42,12 +107,12 @@ class PixelBasedDecoder(object):
 
     def decode_pixels(
         self,
-        imageData: np.ndarray,
+        image: np.ndarray,
         scaleFactors: np.ndarray = None,
         backgrounds: np.ndarray = None,
         distanceThreshold: float = 0.5176,
         magnitudeThreshold: float = 1,
-        lowPassSigma: float = 1
+        lowPassSigma: float = 1,
     ):
         """Assign barcodes to the pixels in the provided image stock.
 
@@ -90,36 +155,34 @@ class PixelBasedDecoder(object):
         if backgrounds is None:
             backgrounds = self._backgrounds
 
-        filteredImages = np.zeros(imageData.shape, dtype=np.float32)
-        filterSize = int(2 * np.ceil(2 * lowPassSigma) + 1)
-        for i in range(imageData.shape[0]):
-            filteredImages[i, :, :] = cv2.GaussianBlur(imageData[i, :, :], (filterSize, filterSize), lowPassSigma)
+        image_shape = image.shape
+        image_data = np.empty(image_shape, dtype=np.float32)
+        filter_size = int(2 * np.ceil(2 * lowPassSigma) + 1)
+        for i in range(image_shape[0]):
+            image_data[i, :, :] = cv2.GaussianBlur(image[i, :, :], (filter_size, filter_size), lowPassSigma)
 
-        pixelTraces = np.reshape(filteredImages, (filteredImages.shape[0], np.prod(filteredImages.shape[1:])))
-        scaledPixelTraces = np.transpose(
-            np.array([(p - b) / s for p, s, b in zip(pixelTraces, scaleFactors, backgrounds)])
-        )
+        image_data = np.reshape(image_data, (image_shape[0], np.prod(image_shape[1:])))
+        image_data = (image_data.T - backgrounds) / scaleFactors
 
-        pixelMagnitudes = np.array(np.linalg.norm(scaledPixelTraces, axis=1), dtype=np.float32)
-        pixelMagnitudes[pixelMagnitudes == 0] = 1
+        pixel_magnitudes = np.array(np.linalg.norm(image_data, axis=1), dtype=np.float32)
+        pixel_magnitudes[pixel_magnitudes == 0] = 1
 
-        normalizedPixelTraces = scaledPixelTraces / pixelMagnitudes[:, None]
+        image_data = image_data / pixel_magnitudes[:, None]
 
-        dot = np.dot(normalizedPixelTraces, self._decodingMatrix.T)
+        dot = np.dot(image_data, self._decodingMatrix.T)
         indexes = np.argmax(dot, axis=1)
         distances = np.sqrt(2 * (1 - dot[np.arange(dot.shape[0]), indexes]))
 
         indexes[distances > distanceThreshold] = -1
-        decodedImage = np.reshape(indexes, filteredImages.shape[1:])
+        decoded_image = np.reshape(indexes, image_shape[1:])
 
-        pixelMagnitudes = np.reshape(pixelMagnitudes, filteredImages.shape[1:])
-        normalizedPixelTraces = np.moveaxis(normalizedPixelTraces, 1, 0)
-        normalizedPixelTraces = np.reshape(normalizedPixelTraces, filteredImages.shape)
-        distances = np.reshape(distances, filteredImages.shape[1:])
+        pixel_magnitudes = np.reshape(pixel_magnitudes, image_shape[1:])
+        image_data = np.moveaxis(image_data, 1, 0)
+        image_data = np.reshape(image_data, image_shape)
+        distances = np.reshape(distances, image_shape[1:])
 
-        decodedImage[pixelMagnitudes < magnitudeThreshold] = -1
-
-        return decodedImage, pixelMagnitudes, normalizedPixelTraces, distances
+        decoded_image[pixel_magnitudes < magnitudeThreshold] = -1
+        return decoded_image, pixel_magnitudes, image_data, distances
 
     def extract_all_barcodes(
         self,
@@ -132,7 +195,7 @@ class PixelBasedDecoder(object):
         zIndex: int = None,
         globalAligner=None,
         minimumArea: int = 0,
-    ) -> pd.DataFrame:
+    ):
         """Extract the barcode information from the decoded image for barcodes
         that were decoded to the specified barcode index.
 
@@ -159,76 +222,78 @@ class PixelBasedDecoder(object):
             a pandas dataframe containing all the barcodes decoded with the
                 specified barcode index
         """
-        classes = set(decodedImage.flat) - {-1}
-        labels = np.zeros_like(decodedImage, dtype=np.uint32)
-        nlabels = 0
-        barcodeIndex = []
-        for k in classes:
-            class_labels, class_nlabels = ndimage.label(decodedImage == k)
-            mask = class_labels != 0
-            labels[mask] = class_labels[mask] + nlabels
-            nlabels += class_nlabels
-            barcodeIndex.extend(np.repeat(k, class_nlabels))
-
         is3D = len(pixelTraces.shape) == 4
-
-        columnNames = [
-            "mean_intensity",
-            "max_intensity",
-            "area",
-            "mean_distance",
-            "min_distance",
-            "x",
-            "y",
-            "z",
-            "global_x",
-            "global_y",
-            "global_z",
-        ]
         if is3D:
-            intensityColumns = ["intensity_{}".format(i) for i in range(pixelTraces.shape[1])]
+            labels, nlabels, barcode_index = label_image_3d(decodedImage)
         else:
-            intensityColumns = ["intensity_{}".format(i) for i in range(pixelTraces.shape[0])]
+            labels, nlabels, barcode_index = label_image_2d(decodedImage)
+
+        nbits = pixelTraces.shape[1] if is3D else pixelTraces.shape[0]
+
         if nlabels == 0:
-            return pd.DataFrame(columns=columnNames + intensityColumns)
+            return np.array([], dtype=np.float32).reshape((0, 12 + nbits))
 
-        index = np.arange(1, nlabels + 1)
-        centroids = np.array(ndimage.center_of_mass(pixelMagnitudes, labels, index))
-        means = ndimage.mean(pixelMagnitudes, labels, index)
-        areas = ndimage.sum_labels(np.ones_like(pixelMagnitudes), labels, index)
-        maxs = ndimage.maximum(pixelMagnitudes, labels, index)
-        meandists = ndimage.mean(distances, labels, index)
-        mindists = ndimage.minimum(distances, labels, index)
+        result = np.empty((nlabels, 12 + nbits), dtype=np.float32)
+        # Area
+        result[:, 2] = np.bincount(labels.ravel())[1:]
+        # Mean intensity
+        result[:, 0] = sum_labels(labels, pixelMagnitudes) / result[:, 2]
+        # Max intensity
+        order = pixelMagnitudes[labels > 0].ravel().argsort()
+        maxs = np.zeros(labels.max() + 1, pixelMagnitudes.dtype)
+        maxs[labels[labels > 0].ravel()[order]] = pixelMagnitudes[labels > 0].ravel()[order]
+        result[:, 1] = maxs[1:]
+        # Mean distance
+        result[:, 3] = np.bincount(labels.ravel(), weights=distances.ravel())[1:] / result[:, 2]
+        # Min distance
+        order = distances[labels > 0].ravel().argsort()
+        mins = np.zeros(labels.max() + 1, distances.dtype)
+        mins[labels[labels > 0].ravel()[order][::-1]] = distances[labels > 0].ravel()[order][::-1]
+        result[:, 4] = mins[1:]
 
+        # Centroids
+        normalizer = sum_labels(labels, pixelMagnitudes)
+        grids = np.ogrid[[slice(0, i) for i in pixelMagnitudes.shape]]
         if is3D:
-            intensities = [ndimage.mean(pixelTraces[:, i, :, :], labels, index) for i in range(pixelTraces.shape[1])]
+            result[:, [7, 6, 5]] = np.array(
+                [
+                    sum_labels(labels, pixelMagnitudes * grids[dim].astype(float)) / normalizer
+                    for dim in range(pixelMagnitudes.ndim)
+                ]
+            ).T
         else:
-            centroids = np.hstack([np.full((len(centroids), 1), zIndex), np.array(centroids)])
-            intensities = [ndimage.mean(pixelTraces[i, :, :], labels, index) for i in range(pixelTraces.shape[0])]
+            result[:, [6, 5]] = np.array(
+                [
+                    sum_labels(labels, pixelMagnitudes * grids[dim].astype(float)) / normalizer
+                    for dim in range(pixelMagnitudes.ndim)
+                ]
+            ).T
+            result[:, 7] = zIndex
 
-        centroids = centroids[:, [0, 2, 1]]
+        # Global centroid coordinates
         if globalAligner is not None:
-            globalCentroids = globalAligner.fov_coordinate_array_to_global(fov, centroids)
+            result[:, [10, 8, 9]] = globalAligner.fov_coordinate_array_to_global(fov, result[:, [7, 5, 6]])
         else:
-            globalCentroids = centroids
+            result[:, [8, 9, 10]] = result[:, [5, 6, 7]]
 
-        centroids = np.hstack([centroids[:, [1, 2, 0]], globalCentroids[:, [1, 2, 0]]])
+        # Per-bit intensity
+        for i, bit in enumerate(range(nbits), start=11):
+            if is3D:
+                result[:, i] = sum_labels(labels, pixelTraces[:, bit, :, :]) / result[:, 2]
+            else:
+                result[:, i] = sum_labels(labels, pixelTraces[bit, :, :]) / result[:, 2]
 
-        molecules = pd.DataFrame(
-            np.hstack([np.array([means, maxs, areas, meandists, mindists]).T, centroids, np.array(intensities).T]),
-            columns=columnNames + intensityColumns,
-        )
-        molecules["barcode_id"] = barcodeIndex
-        molecules["fov"] = fov
-        molecules["cell_index"] = -1
+        result[:, -1] = barcode_index
 
-        molecules = molecules[
-            (molecules["x"].between(cropWidth, decodedImage.shape[-2] - cropWidth, inclusive="neither"))
-            & (molecules["y"].between(cropWidth, decodedImage.shape[-1] - cropWidth, inclusive="neither"))
-            & (molecules["area"] >= minimumArea)
+        result = result[
+            (result[:, 5] >= cropWidth)
+            & (result[:, 5] < decodedImage.shape[-2])
+            & (result[:, 6] >= cropWidth)
+            & (result[:, 6] < decodedImage.shape[-1])
+            & (result[:, 2] >= minimumArea)
         ]
 
-        return molecules
+        return result
 
     def _calculate_normalized_barcodes(self, ignoreBlanks=False, includeErrors=False):
         """Normalize the barcodes present in the provided codebook so that
@@ -250,7 +315,7 @@ class PixelBasedDecoder(object):
 
         if not includeErrors:
             weightedBarcodes = np.array([normalize(x) for x, m in zip(barcodeSet, magnitudes)])
-            return weightedBarcodes
+            return weightedBarcodes.astype(np.float32)
 
         else:
             barcodesWithSingleErrors = []
@@ -259,7 +324,7 @@ class PixelBasedDecoder(object):
                 bcMagnitudes = np.sqrt(np.sum(barcodeSet * barcodeSet, axis=1))
                 weightedBC = np.array([x / m for x, m in zip(barcodeSet, bcMagnitudes)])
                 barcodesWithSingleErrors.append(weightedBC)
-            return np.array(barcodesWithSingleErrors)
+            return np.array(barcodesWithSingleErrors, dtype=np.float32)
 
     def extract_refactors(
         self, decodedImage, pixelMagnitudes, normalizedPixelTraces, extractBackgrounds=False
@@ -313,7 +378,7 @@ class PixelBasedDecoder(object):
         onBitIntensity = np.nanmean(sumPixelTraces, axis=0)
         refactors = onBitIntensity / np.mean(onBitIntensity)
 
-        return refactors, backgroundRefactors, barcodesSeen
+        return refactors.astype(np.float32), backgroundRefactors.astype(np.float32), barcodesSeen
 
     def _extract_backgrounds(self, decodedImage, pixelMagnitudes, normalizedPixelTraces) -> np.ndarray:
         """Calculate the backgrounds to be subtracted for the the mean off

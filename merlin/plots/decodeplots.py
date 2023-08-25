@@ -85,12 +85,8 @@ class DecodedBarcodeAbundancePlot(AbstractPlot):
             metadata.barcode_counts, index=np.arange(len(metadata.barcode_counts)), columns=["counts"]
         )
 
-        gene_counts = counts[counts.index.isin(codebook.get_coding_indexes())].sort_values(
-            by="counts", ascending=False
-        )
-        blank_counts = counts[counts.index.isin(codebook.get_blank_indexes())].sort_values(
-            by="counts", ascending=False
-        )
+        gene_counts = counts[counts.index.isin(codebook.get_coding_indexes())].sort_values(by="counts", ascending=False)
+        blank_counts = counts[counts.index.isin(codebook.get_blank_indexes())].sort_values(by="counts", ascending=False)
 
         fig = plt.figure(figsize=(10, 5))
         plt.plot(np.arange(len(gene_counts)), np.log10(gene_counts["counts"]), "b.")
@@ -196,8 +192,9 @@ class DecodedBarcodesMetadata(PlotMetadata):
             )[0]
 
     def process_barcodes(self, fov) -> None:
-        barcodes = self.decode_task.get_barcode_database().get_barcodes(
-            fov, columnList=["barcode_id", "area", "mean_intensity", "min_distance"]
+        barcodes = self.decode_task.load_result("barcodes", fov)
+        barcodes = pd.DataFrame(
+            barcodes[:, [-1, 2, 0, 4]], columns=["barcode_id", "area", "mean_intensity", "min_distance"]
         )
         if not hasattr(self, "intensity_bins"):  # Still waiting for 20 fovs to complete
             self.queued_data.append(barcodes)

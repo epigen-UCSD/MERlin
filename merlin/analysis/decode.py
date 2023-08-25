@@ -1,13 +1,11 @@
 import os
 import tempfile
-from pathlib import Path
 
 import cv2
 import numpy as np
-import pandas
 from scipy.spatial import cKDTree
 
-from merlin.core import analysistask, dataset
+from merlin.core import analysistask
 from merlin.data.codebook import Codebook
 from merlin.util import barcodedb, barcodefilters, decoding
 
@@ -50,6 +48,8 @@ class Decode(BarcodeSavingParallelAnalysisTask):
             }
         )
 
+        self.define_results("barcodes")
+
         self.set_default_parameters(
             {
                 "crop_width": 100,
@@ -91,6 +91,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         decodedImages = np.zeros((zPositionCount, *imageShape), dtype=np.int16)
         magnitudeImages = np.zeros((zPositionCount, *imageShape), dtype=np.float32)
         distances = np.zeros((zPositionCount, *imageShape), dtype=np.float32)
+        self.barcodes = np.array([], dtype=np.float32).reshape((0, 12 + bitCount))
 
         if not decode3d:
             for zIndex in range(zPositionCount):
@@ -131,8 +132,16 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                     magnitudeImages[zIndex, :, :] = pm
                     distances[zIndex, :, :] = d
 
-                self._extract_and_save_barcodes(
-                    decoder, decodedImages, magnitudeImages, normalizedPixelTraces, distances, self.fragment
+                self.barcodes = decoder.extract_all_barcodes(
+                    decodedImages,
+                    magnitudeImages,
+                    normalizedPixelTraces,
+                    distances,
+                    self.fragment,
+                    self.cropWidth,
+                    zIndex,
+                    self.global_align_task,
+                    self.parameters["minimum_area"],
                 )
 
                 del normalizedPixelTraces
@@ -145,6 +154,10 @@ class Decode(BarcodeSavingParallelAnalysisTask):
             bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=self.fragment))
             bcDB.empty_database(self.fragment)
             bcDB.write_barcodes(bc, fov=self.fragment)
+
+    #    def metadata(self) -> dict:
+    #        barcodes = self.get_barcode_database()
+    #        return {"total": len(barcodes.get_barcodes(fov=self.fragment))}
 
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
@@ -159,7 +172,22 @@ class Decode(BarcodeSavingParallelAnalysisTask):
             lowPassSigma=self.parameters["lowpass_sigma"],
             distanceThreshold=self.parameters["distance_threshold"],
         )
-        self._extract_and_save_barcodes(decoder, di, pm, npt, d, fov, zIndex)
+        self.barcodes = np.vstack(
+            [
+                self.barcodes,
+                decoder.extract_all_barcodes(
+                    di,
+                    pm,
+                    npt,
+                    d,
+                    fov,
+                    self.cropWidth,
+                    zIndex,
+                    self.global_align_task,
+                    self.parameters["minimum_area"],
+                ),
+            ]
+        )
 
         return di, pm, d
 
@@ -181,33 +209,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                 outputTif.save(
                     distanceImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription
                 )
-
-    def _extract_and_save_barcodes(
-        self,
-        decoder: decoding.PixelBasedDecoder,
-        decodedImage: np.ndarray,
-        pixelMagnitudes: np.ndarray,
-        pixelTraces: np.ndarray,
-        distances: np.ndarray,
-        fov: int,
-        zIndex: int = None,
-    ) -> None:
-        minimumArea = self.parameters["minimum_area"]
-
-        self.get_barcode_database().write_barcodes(
-            decoder.extract_all_barcodes(
-                decodedImage,
-                pixelMagnitudes,
-                pixelTraces,
-                distances,
-                fov,
-                self.cropWidth,
-                zIndex,
-                self.global_align_task,
-                minimumArea,
-            ),
-            fov=fov,
-        )
 
     def _remove_z_duplicate_barcodes(self, bc):
         bc = barcodefilters.remove_zplane_duplicates_all_barcodeids(

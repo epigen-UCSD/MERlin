@@ -169,7 +169,7 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
         return np.sum(blankHistogram[blankFraction < threshold]) + np.sum(codingHistogram[blankFraction < threshold])
 
     def extract_barcodes_with_threshold(self, blankThreshold: float, barcodeSet: pandas.DataFrame) -> pandas.DataFrame:
-        selectData = barcodeSet[["mean_intensity", "min_distance", "area"]].values
+        selectData = barcodeSet[:, [0, 4, 2]]
         selectData[:, 0] = np.log10(selectData[:, 0])
         blankFractionHistogram = self.get_blank_fraction_histogram()
 
@@ -193,13 +193,12 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
     @staticmethod
     def _extract_counts(barcodes, intensityBins, distanceBins, areaBins):
-        barcodeData = barcodes[["mean_intensity", "min_distance", "area"]].values
+        barcodeData = barcodes[:, [0, 4, 2]]
         barcodeData[:, 0] = np.log10(barcodeData[:, 0])
         return np.histogramdd(barcodeData, bins=(intensityBins, distanceBins, areaBins))[0]
 
     def run_analysis(self):
         codebook = self.decode_task.get_codebook()
-        barcodeDB = self.decode_task.get_barcode_database()
 
         self.complete_fragments = self.dataSet.load_numpy_analysis_result_if_available(
             "complete_fragments", self, [False] * len(self.dataSet.get_fovs())
@@ -242,8 +241,8 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
                         [self.dataSet.get_fovs()[i] for i, p in enumerate(pending_fragments) if p], size=20
                     )
                     intensityExtremes = [
-                        extreme_values(barcodeDB.get_barcodes(i, columnList=["mean_intensity"])["mean_intensity"])
-                        for i in sampledFragments
+                        extreme_values(self.decode_task.load_result("barcodes", fragment)[:, 0])
+                        for fragment in sampledFragments
                     ]
                     maxIntensity = np.log10(np.max([x[1] for x in intensityExtremes]))
                     self.intensity_bins = np.arange(0, 2 * maxIntensity, maxIntensity / 100)
@@ -260,17 +259,15 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
                 for i, fragment in enumerate(self.dataSet.get_fovs()):
                     self.decode_task.fragment = fragment
                     if not self.complete_fragments[i] and self.decode_task.is_complete():
-                        barcodes = barcodeDB.get_barcodes(
-                            fragment, columnList=["barcode_id", "mean_intensity", "min_distance", "area"]
-                        )
+                        barcodes = self.decode_task.load_result("barcodes", fragment)
                         self.blank_counts += self._extract_counts(
-                            barcodes[barcodes["barcode_id"].isin(codebook.get_blank_indexes())],
+                            barcodes[np.isin(barcodes[:, -1], codebook.get_blank_indexes())],
                             self.intensity_bins,
                             self.distance_bins,
                             self.area_bins,
                         )
                         self.coding_counts += self._extract_counts(
-                            barcodes[barcodes["barcode_id"].isin(codebook.get_coding_indexes())],
+                            barcodes[np.isin(barcodes[:, -1], codebook.get_coding_indexes())],
                             self.intensity_bins,
                             self.distance_bins,
                             self.area_bins,
@@ -297,6 +294,7 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
 
         self.add_dependencies({"adaptive_task": [], "decode_task": []})
         self.set_default_parameters({"misidentification_rate": 0.05})
+        self.define_results("barcodes")
 
     def get_adaptive_thresholds(self):
         """Get the adaptive thresholds used for filtering barcodes.
@@ -311,9 +309,6 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
             self.parameters["misidentification_rate"]
         )
 
-        bcDatabase = self.get_barcode_database()
-        currentBarcodes = self.decode_task.get_barcode_database().get_barcodes(self.fragment)
+        currentBarcodes = self.decode_task.load_result("barcodes", self.fragment)
 
-        bcDatabase.write_barcodes(
-            self.adaptive_task.extract_barcodes_with_threshold(threshold, currentBarcodes), fov=self.fragment
-        )
+        self.barcodes = self.adaptive_task.extract_barcodes_with_threshold(threshold, currentBarcodes)

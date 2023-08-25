@@ -143,12 +143,8 @@ class FilteredBarcodeAbundancePlot(AbstractPlot):
             metadata.barcode_counts, index=np.arange(len(metadata.barcode_counts)), columns=["counts"]
         )
 
-        gene_counts = counts[counts.index.isin(codebook.get_coding_indexes())].sort_values(
-            by="counts", ascending=False
-        )
-        blank_counts = counts[counts.index.isin(codebook.get_blank_indexes())].sort_values(
-            by="counts", ascending=False
-        )
+        gene_counts = counts[counts.index.isin(codebook.get_coding_indexes())].sort_values(by="counts", ascending=False)
+        blank_counts = counts[counts.index.isin(codebook.get_blank_indexes())].sort_values(by="counts", ascending=False)
 
         fig = plt.figure(figsize=(10, 5))
         plt.plot(np.arange(len(gene_counts)), np.log10(gene_counts["counts"]), "b.")
@@ -334,7 +330,8 @@ class FOVSpatialDistributionMetadata(PlotMetadata):
 
     def process_barcodes(self, fov) -> None:
         codebook = self.filterTask.get_codebook()
-        barcodes = self.filterTask.get_barcode_database().get_barcodes(fov, columnList=["barcode_id", "x", "y"])
+        barcodes = self.filterTask.load_result("barcodes", fov)
+        barcodes = pd.DataFrame(barcodes[:, [-1, 5, 6]], columns=["barcode_id", "x", "y"])
         if len(barcodes) > 0:
             self.spatial_coding_counts += self.spatial_distribution(barcodes, codebook.get_coding_indexes())
             self.spatial_blank_counts += self.spatial_distribution(barcodes, codebook.get_blank_indexes())
@@ -354,8 +351,8 @@ class FilteredBarcodesMetadata(PlotMetadata):
         self.register_datasets("barcode_counts")
 
     def process_barcodes(self, fov) -> None:
-        barcodes = self.filter_task.get_barcode_database().get_barcodes(fov, columnList=["barcode_id"])
-        self.barcode_counts += np.histogram(barcodes["barcode_id"], bins=np.arange(len(self.barcode_counts) + 1))[0]
+        barcodes = self.filter_task.load_result("barcodes", fov)[:, -1]
+        self.barcode_counts += np.histogram(barcodes, bins=np.arange(len(self.barcode_counts) + 1))[0]
 
 
 class GlobalSpatialDistributionMetadata(PlotMetadata):
@@ -393,8 +390,7 @@ class GlobalSpatialDistributionMetadata(PlotMetadata):
     def process_barcodes(self, fov) -> None:
         filter_task = self.required_tasks["filter_task"]
         codebook = filter_task.get_codebook()
-        barcodes = filter_task.get_barcode_database().get_barcodes(
-            fov, columnList=["barcode_id", "global_x", "global_y"]
-        )
+        barcodes = filter_task.load_result("barcodes", fov)
+        barcodes = pd.DataFrame(barcodes[:, [-1, 8, 9]], columns=["barcode_id", "global_x", "global_y"])
         self.spatial_coding_counts += self.spatial_distribution(barcodes, codebook.get_coding_indexes())
         self.spatial_blank_counts += self.spatial_distribution(barcodes, codebook.get_blank_indexes())

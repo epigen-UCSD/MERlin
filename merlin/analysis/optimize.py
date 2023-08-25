@@ -43,7 +43,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         )
 
         self.define_results(
-            "select_frame", "scale_factors", "background_factors", "chromatic_corrections", "barcode_counts"
+            "select_frame", "scale_factors", "background_factors", "chromatic_corrections", "barcode_counts", "barcodes"
         )
         self.define_results("scale_factors", "background_factors", "chromatic_corrections", final=True)
 
@@ -100,9 +100,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         # TODO this saves the barcodes under fragment instead of fov
         # the barcodedb should be made more general
         crop_width = self.parameters["crop_width"]
-        self.get_barcode_database().write_barcodes(
-            decoder.extract_all_barcodes(di, pm, npt, d, fov_index, crop_width, z_index, minimumArea=area_threshold),
-            fov=self.fragment,
+        self.barcodes = decoder.extract_all_barcodes(
+            di, pm, npt, d, fov_index, crop_width, z_index, minimumArea=area_threshold
         )
 
     def _get_used_colors(self) -> list[str]:
@@ -117,12 +116,12 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
     def _get_previous_scale_factors(self) -> np.ndarray:
         if "previous_iteration" not in self.parameters:
-            return np.ones(self.get_codebook().get_bit_count())
+            return np.ones(self.get_codebook().get_bit_count(), dtype=np.float32)
         return self.previous_iteration.load_result("scale_factors")
 
     def _get_previous_backgrounds(self) -> np.ndarray:
         if "previous_iteration" not in self.parameters:
-            return np.zeros(self.get_codebook().get_bit_count())
+            return np.zeros(self.get_codebook().get_bit_count(), dtype=np.float32)
         return self.previous_iteration.load_result("background_factors")
 
     def _get_previous_chromatic_transformations(self) -> dict[str, dict[str, transform.SimilarityTransform]]:
@@ -165,17 +164,16 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         codebook = self.get_codebook()
         data_organization = self.dataSet.get_data_organization()
 
-        barcodes = self.get_barcode_database().get_barcodes()
-        fov_list = np.unique(barcodes["fov"])
+        barcodes = {fragment: self.load_result("barcodes", fragment) for fragment in self.fragment_list}
 
         colors = self._get_used_colors()
         colorPairDisplacements = {u: {v: [] for v in colors if v >= u} for u in colors}
 
-        for fov in fov_list:
-            fovBarcodes = barcodes[barcodes["fov"] == fov]
-            zIndexes = np.unique(fovBarcodes["z"])
+        for fragment, fovBarcodes in barcodes.items():
+            fov = fragment.split("__")[0]
+            zIndexes = np.unique(fovBarcodes[:, 7])
             for z in zIndexes:
-                currentBarcodes = fovBarcodes[fovBarcodes["z"] == z]
+                currentBarcodes = fovBarcodes[fovBarcodes[:, 7] == z]
                 # TODO this can be moved to the run function for the task
                 # so not as much repeated work is done when it is called
                 # from many different tasks in parallel
@@ -188,18 +186,18 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                     ]
                 )
 
-                for i, cBC in currentBarcodes.iterrows():
-                    onBits = np.where(codebook.get_barcode(cBC["barcode_id"]))[0]
+                for cBC in currentBarcodes:
+                    onBits = np.where(codebook.get_barcode(cBC[-1]))[0]
 
                     # TODO this can be done by crop width when decoding
                     if (
-                        cBC["x"] > 10
-                        and cBC["y"] > 10
-                        and warpedImages.shape[1] - cBC["x"] > 10
-                        and warpedImages.shape[2] - cBC["y"] > 10
+                        cBC[5] > 10
+                        and cBC[6] > 10
+                        and warpedImages.shape[1] - cBC[5] > 10
+                        and warpedImages.shape[2] - cBC[6] > 10
                     ):
                         refinedPositions = np.array(
-                            [registration.refine_position(warpedImages[i, :, :], cBC["x"], cBC["y"]) for i in onBits]
+                            [registration.refine_position(warpedImages[i, :, :], cBC[5], cBC[6]) for i in onBits]
                         )
                         for p in itertools.combinations(enumerate(onBits), 2):
                             c1 = data_organization.get_data_channel_color(p[0][1])
@@ -208,14 +206,14 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                             if c1 < c2:
                                 colorPairDisplacements[c1][c2].append(
                                     [
-                                        np.array([cBC["x"], cBC["y"]]),
+                                        np.array([cBC[5], cBC[6]]),
                                         refinedPositions[p[1][0]] - refinedPositions[p[0][0]],
                                     ]
                                 )
                             else:
                                 colorPairDisplacements[c2][c1].append(
                                     [
-                                        np.array([cBC["x"], cBC["y"]]),
+                                        np.array([cBC[5], cBC[6]]),
                                         refinedPositions[p[0][0]] - refinedPositions[p[1][0]],
                                     ]
                                 )

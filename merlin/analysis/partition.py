@@ -115,7 +115,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
             A pandas data frame containing the parsed barcode information.
         """
         if fov is None:
-            return pd.concat([self.get_cell_by_gene_matrix(fov) for fov in self.dataSet.get_fovs()])
+            return pd.concat([self.get_cell_by_gene_matrix(fov) for fov in self.dataSet.get_fovs()]).fillna(0)
 
         return self.dataSet.load_dataframe_from_csv(
             "counts_per_cell", self.analysis_name, fov, subdirectory="counts_per_cell", index_col=0
@@ -138,8 +138,13 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
 
     def assign_barcodes(self, filter_task):
         codebook = filter_task.get_codebook()
-        barcodes = filter_task.get_barcode_database().get_barcodes(self.fragment)
+        barcodes = filter_task.load_result("barcodes", self.fragment)
 
+        barcodes = pd.DataFrame(
+            barcodes[:, [-1, 5, 6, 7, 8, 9, 10]],
+            columns=["barcode_id", "x", "y", "z", "global_x", "global_y", "global_z"],
+        )
+        barcodes["fov"] = self.fragment
         # Trim barcodes in overlapping regions
         overlap_mask = self.dataSet.get_overlap_mask(self.fragment, trim=True)
         barcodes = barcodes[~self.apply_mask(barcodes, overlap_mask.astype(bool))]
