@@ -1,4 +1,5 @@
 from typing import List
+from functools import partial
 
 import cv2
 import networkx as nx
@@ -277,16 +278,17 @@ class CellposeSegment(analysistask.AnalysisTask):
             zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
             inputImage = np.array([self.load_image(self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions])
         model = cpmodels.Cellpose(gpu=False, model_type="cyto2")
+        segment = partial(
+            model.eval,
+            channels=[0, 0],
+            diameter=self.parameters["diameter"],
+            cellprob_threshold=self.parameters["cellprob_threshold"],
+            flow_threshold=self.parameters["flow_threshold"],
+        )
         if inputImage.ndim == 2:
-            mask, _, _, _ = model.eval(
-                inputImage,
-                channels=[0, 0],
-                diameter=self.parameters["diameter"],
-                cellprob_threshold=self.parameters["cellprob_threshold"],
-                flow_threshold=self.parameters["flow_threshold"],
-            )
+            mask, _, _, _ = segment(inputImage)
         else:
-            frames, _, _, _ = model.eval(list(inputImage))
+            frames, _, _, _ = segment(list(inputImage))
             mask = np.array(utils.stitch3D(frames))
         if self.parameters["minimum_size"]:
             sizes = pd.DataFrame(regionprops_table(mask, properties=["label", "area"]))

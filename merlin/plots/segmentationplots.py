@@ -140,15 +140,18 @@ class LinkCellsPlot(AbstractPlot):
         super().__init__(plot_task)
         self.set_required_tasks({"link_cell_task": LinkCellsInOverlaps})
         self.formats = [".png"]
-    
+
     def create_plot(self, **kwargs) -> plt.Figure:
         link_task = kwargs["tasks"]["link_cell_task"]
 
         links = link_task.get_links(link_task.fragment_list[0])
         fragment1, fragment2 = link_task.fragment_list[0].split("__")
-        
+
         # Find the orientation of the two FOVs (vertical/horizontal)
-        diffs = link_task.dataSet.get_stage_positions().loc[fragment1] - link_task.dataSet.get_stage_positions().loc[fragment2]
+        diffs = (
+            link_task.dataSet.get_stage_positions().loc[fragment1]
+            - link_task.dataSet.get_stage_positions().loc[fragment2]
+        )
         axis = np.abs(diffs).argmax()
         if diffs[axis] > 0:
             fragment1, fragment2 = fragment2, fragment1
@@ -164,54 +167,55 @@ class LinkCellsPlot(AbstractPlot):
             z_index = segtask1.dataSet.position_to_z_index(segtask1.parameters["z_pos"])
         else:
             z_positions = segtask1.dataSet.get_z_positions()[:: segtask1.parameters["downscale_z"]]
-            z_index = segtask1.dataSet.positions_to_z_index(z_positions[len(z_positions) // 2])
+            z_index = segtask1.dataSet.position_to_z_index(z_positions[len(z_positions) // 2])
+            mask1 = mask1[z_index]
         img1 = segtask1.load_image(z_index)
 
         if segtask2.parameters["z_pos"] is not None:
             z_index = segtask2.dataSet.position_to_z_index(segtask2.parameters["z_pos"])
         else:
             z_positions = segtask2.dataSet.get_z_positions()[:: segtask2.parameters["downscale_z"]]
-            z_index = segtask2.dataSet.positions_to_z_index(z_positions[len(z_positions) // 2])
+            z_index = segtask2.dataSet.position_to_z_index(z_positions[len(z_positions) // 2])
+            mask2 = mask2[z_index]
         img2 = segtask2.load_image(z_index)
 
         # Combine the two FOVs into one
         if axis == 1:
-            segimg = np.zeros((img1.shape[0], img1.shape[0]*2+100))
+            segimg = np.zeros((img1.shape[0], img1.shape[0] * 2 + 100))
             segimg[:, :img1.shape[0]] = img1
-            segimg[:, img1.shape[0]+100:] = img2
+            segimg[:, img1.shape[0] + 100:] = img2
             mask = np.zeros_like(segimg)
-            mask[:, :img1.shape[0]] = mask1
-            mask[:, img1.shape[0]+100:] = mask2
+            mask[:, : img1.shape[0]] = mask1
+            mask[:, img1.shape[0] + 100:] = mask2
         else:
-            segimg = np.zeros((img1.shape[0]*2+100, img1.shape[0]))
-            segimg[:img1.shape[0], :] = img1
-            segimg[img1.shape[0]+100:, :] = img2
+            segimg = np.zeros((img1.shape[0] * 2 + 100, img1.shape[0]))
+            segimg[: img1.shape[0], :] = img1
+            segimg[img1.shape[0] + 100:, :] = img2
             mask = np.zeros_like(segimg)
-            mask[:img1.shape[0], :] = mask1
-            mask[img1.shape[0]+100:, :] = mask2
+            mask[: img1.shape[0], :] = mask1
+            mask[img1.shape[0] + 100:, :] = mask2
 
         # Get the cell centroids
         props1 = pd.DataFrame(regionprops_table(mask1, properties=["label", "centroid"]))
         props1 = props1.set_index("label")
         props2 = pd.DataFrame(regionprops_table(mask2, properties=["label", "centroid"]))
         props2 = props2.set_index("label")
-        props2[f"centroid-{axis}"] = props2[f"centroid-{axis}"] + img1.shape[0]+100
+        props2[f"centroid-{axis}"] = props2[f"centroid-{axis}"] + img1.shape[0] + 100
 
         # Plot everything
-        if axis == 0:
-            fig = plt.figure(figsize=(6, 12), dpi=150)
-        else:
-            fig = plt.figure(figsize=(12, 6), dpi=150)
+        figsize = (6, 12) if axis == 0 else (12, 6)
+        fig = plt.figure(figsize=figsize, dpi=150)
         plt.imshow(segimg, cmap="gray", vmax=np.percentile(segimg, 99))
-        plt.contour(mask, [0.5+x for x in np.unique(mask)], colors="tab:blue", linewidths=1)
+        plt.contour(mask, [0.5 + x for x in np.unique(mask)], colors="tab:blue", linewidths=1)
         for cell1, cell2 in links:
             if diffs[axis] > 0:
                 cell1, cell2 = cell2, cell1
             id1 = int(cell1.split("__")[1])
             id2 = int(cell2.split("__")[1])
-            y1, x1 = props1.loc[id1]
-            y2, x2 = props2.loc[id2]
-            plt.plot([x1, x2], [y1, y2], c="tab:red", alpha=0.5)
+            if id1 in props1.index and id2 in props2.index:
+                y1, x1 = props1.loc[id1]
+                y2, x2 = props2.loc[id2]
+                plt.plot([x1, x2], [y1, y2], c="tab:red", alpha=0.5)
         plt.axis("off")
 
         return fig
