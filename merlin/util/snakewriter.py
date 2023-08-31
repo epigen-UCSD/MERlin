@@ -76,18 +76,16 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *,
         python_path,
         "-m merlin",
         f"-t {task.analysis_name}",
-        f"-e {task.dataSet.dataHome}",
-        f"-s {task.dataSet.analysisHome}",
+        f"-e {task.dataSet.data_root}",
+        f"-s {task.dataSet.analysis_root}",
     ]
     if task.dataSet.profile:
         args.append("--profile")
     if task.is_parallel() and not finalize:
         args.append("-i {wildcards.i}")
-    if task.dataSet.analysisHome / task.dataSet.dataSetName != task.dataSet.analysisPath:
-        rootlen = len(str(task.dataSet.analysisHome / task.dataSet.dataSetName))
-        suffix = str(task.dataSet.analysisPath)[rootlen + 1 :]
-        args.append(f"--suffix {suffix}")
-    args.append(task.dataSet.dataSetName)
+    if task.dataSet.analysis_suffix:
+        args.append(f"--suffix {task.dataSet.analysis_suffix}")
+    args.append(task.dataSet.experiment_name)
     return " ".join(args)
 
 
@@ -128,7 +126,7 @@ class SnakefileGenerator:
             analysis_class = getattr(module, task_dict["task"])
             parameters = task_dict.get("parameters")
             name = task_dict.get("analysis_name")
-            task = analysis_class(self.dataset, self.dataset.analysisPath, parameters, name, fragment="")
+            task = analysis_class(self.dataset, self.dataset.analysis_path, parameters, name, fragment="")
             self.generate_task(task)
 
     def generate_task(self, task) -> None:

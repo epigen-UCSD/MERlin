@@ -274,7 +274,7 @@ class DataOrganization:
                 & (self.fileMap["imagingRound"] == imaging_round)
             ]
         filemap_path = selection["imagePath"].to_numpy()[0]
-        return self.dataset.dataHome / self.dataset.dataSetName / filemap_path
+        return self.dataset.raw_data_path / filemap_path
 
     def _truncate_file_path(self, path) -> None:
         head, tail = os.path.split(path)
@@ -287,7 +287,10 @@ class DataOrganization:
 
         try:
             self.fileMap = self.dataset.load_dataframe_from_csv("filemap", dtype={"fov": str})
-
+            if self.fov_list:
+                self.fileMap = self.fileMap[self.fileMap["fov"].isin(self.fov_list)]
+            if self.skip:
+                self.fileMap = self.fileMap[~self.fileMap["fov"].isin(self.skip)]
         except FileNotFoundError as e:
             print("Mapping image files from data organization")
             unique_patterns = self.data.drop_duplicates(subset=["imageType", "imageRegExp"], keep="first")
@@ -354,7 +357,7 @@ class DataOrganization:
                         f"Unable to find image path for {channel_info['imageType']}, fov={fov}, round={channel_info['imagingRound']}"
                     ) from e
 
-                if not self.dataset.rawDataPortal.open_file(image_path).exists():
+                if not self.dataset.raw_data_portal.open_file(image_path).exists():
                     raise InputDataError(
                         ("Image data for channel {0} and fov {1} not found. " "Expected at {2}").format(
                             data_channel, fov, image_path

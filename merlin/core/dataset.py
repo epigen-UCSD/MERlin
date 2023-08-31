@@ -1,38 +1,31 @@
-import os
-import json
-import shutil
-import pandas
-import numpy as np
-import scanpy as sc
-from pathlib import Path
-import tifffile
-import importlib
-import time
-import logging
-import pickle
 import datetime
-import networkx as nx
-from matplotlib import pyplot as plt
-from typing import List
-from typing import Tuple
-from typing import Union
-from typing import Dict
-from typing import Optional
-import h5py
-import tables
-import xmltodict
-import math
 import functools
-from sklearn.neighbors import NearestNeighbors
+import importlib
+import json
+import logging
+import math
+import os
+import pickle
+import shutil
 from collections import namedtuple
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
-from merlin.util import imagereader
+import h5py
+import networkx as nx
+import numpy as np
+import pandas
+import scanpy as sc
+import tables
+import tifffile
+import xmltodict
+from matplotlib import pyplot as plt
+from sklearn.neighbors import NearestNeighbors
+
 import merlin
 from merlin.core import analysistask
-from merlin.data import dataorganization
-from merlin.data import codebook
-from merlin.util import dataportal
-
+from merlin.data import codebook, dataorganization
+from merlin.util import dataportal, imagereader
 
 TaskOrName = Union[analysistask.AnalysisTask, str]
 
@@ -41,106 +34,107 @@ class DataFormatException(Exception):
     pass
 
 
-class DataSet(object):
+class DataSet:
     def __init__(
         self,
-        dataDirectoryName: Path,
-        dataHome: Path | None = None,
-        analysisHome: Path | None = None,
+        experiment_name: Path,
+        data_root: Path | None = None,
+        analysis_root: Path | None = None,
         analysis_suffix: str | None = None,
     ) -> None:
         """Create a dataset for the specified raw data.
 
         Args:
-            dataDirectoryName: the relative directory to the raw data
-            dataHome: the base path to the data. The data is expected
-                    to be in dataHome/dataDirectoryName. If dataHome
-                    is not specified, DATA_HOME is read from the
-                    .env file.
-            analysisHome: the base path for storing analysis results. Analysis
-                    results for this DataSet will be stored in
-                    analysisHome/dataDirectoryName. If analysisHome is not
-                    specified, ANALYSIS_HOME is read from the .env file.
+            experiment_name: the relative directory to the raw data
+            data_root: the base path to the data. The data is expected
+                to be in data_root/experiment_name. If data_root
+                is not specified, DATA_HOME is read from the
+                .env file.
+            analysis_root: the base path for storing analysis results. Analysis
+                results for this DataSet will be stored in
+                analysis_root/experiment_name. If analysis_root is not
+                specified, ANALYSIS_HOME is read from the .env file.
+            analysis_suffix: A suffix to append to experiment_name when creating
+                the analysis output folder. Enables different analyses on the
+                same data.
         """
-        if dataHome is None:
-            dataHome = merlin.DATA_HOME
-        if analysisHome is None:
-            analysisHome = merlin.ANALYSIS_HOME
+        if data_root is None:
+            data_root = merlin.DATA_HOME
+        if analysis_root is None:
+            analysis_root = merlin.ANALYSIS_HOME
 
-        self.dataSetName = dataDirectoryName
-        self.dataHome = dataHome
-        self.analysisHome = analysisHome
+        self.experiment_name = experiment_name
+        self.data_root = data_root
+        self.analysis_root = analysis_root
+        self.analysis_suffix = analysis_suffix
 
-        self.rawDataPath = dataHome / dataDirectoryName
-        self.rawDataPortal = dataportal.DataPortal.create_portal(self.rawDataPath)
-        if not self.rawDataPortal.is_available():
-            print("The raw data is not available at %s".format(self.rawDataPath))
+        self.raw_data_path = data_root / experiment_name
+        self.raw_data_portal = dataportal.DataPortal.create_portal(self.raw_data_path)
+        if not self.raw_data_portal.is_available():
+            print(f"The raw data is not available at {self.raw_data_path}")
 
-        analysis_name = Path(f"{str(dataDirectoryName)}_{analysis_suffix}") if analysis_suffix else dataDirectoryName
-        self.analysisPath = analysisHome / analysis_name
+        analysis_name = Path(f"{str(experiment_name)}_{analysis_suffix}") if analysis_suffix else experiment_name
+        self.analysis_path = analysis_root / analysis_name
 
         self._store_dataset_metadata()
 
-        self.analysisPath.mkdir(parents=True, exist_ok=True)
-
-        self.logPath = self.analysisPath / "logs"
-        self.logPath.mkdir(parents=True, exist_ok=True)
+        self.analysis_path.mkdir(parents=True, exist_ok=True)
 
     def _store_dataset_metadata(self) -> None:
         try:
-            oldMetadata = self.load_json_analysis_result("dataset", None)
-            if not merlin.is_compatible(oldMetadata["merlin_version"]):
+            old_metadata = self.load_json_analysis_result("dataset", None)
+            if not merlin.is_compatible(old_metadata["merlin_version"]):
                 raise merlin.IncompatibleVersionError(
                     (
                         "Analysis was performed on dataset %s with MERlin "
                         + "version %s, which is not compatible with the current "
                         + "MERlin version %s"
                     )
-                    % (self.dataSetName, oldMetadata["version"], merlin.version())
+                    % (self.experiment_name, old_metadata["version"], merlin.version())
                 )
-            self.analysisPath = Path(oldMetadata["analysis_path"])
+            #self.analysisPath = Path(oldMetadata["analysis_path"])
         except FileNotFoundError:
-            newMetadata = {
+            new_metadata = {
                 "merlin_version": merlin.version(),
                 "module": type(self).__module__,
                 "class": type(self).__name__,
-                "dataset_name": self.dataSetName,
+                "dataset_name": self.experiment_name,
                 "creation_date": str(datetime.datetime.now()),
-                "analysis_path": str(self.analysisPath),
+                "analysis_path": str(self.analysis_path),
             }
-            self.analysisPath.mkdir(parents=True, exist_ok=True)
-            self.save_json_analysis_result(newMetadata, "dataset", None)
+            self.analysis_path.mkdir(parents=True, exist_ok=True)
+            self.save_json_analysis_result(new_metadata, "dataset", None)
 
-    def save_workflow(self, workflowString: str) -> Path:
+    def save_workflow(self, workflow_string: str) -> Path:
         """Save a snakemake workflow for analysis of this dataset.
 
         Args:
-            workflowString: a string containing the snakemake workflow
+            workflow_string: a string containing the snakemake workflow
                 to save
 
         Returns: the path to the saved workflow
         """
-        snakemakePath = self.get_snakemake_path()
-        snakemakePath.mkdir(parents=True, exist_ok=True)
+        snakemake_path = self.get_snakemake_path()
+        snakemake_path.mkdir(parents=True, exist_ok=True)
 
-        workflowPath = snakemakePath / (datetime.datetime.now().strftime("%y%m%d_%H%M%S") + ".Snakefile")
-        with workflowPath.open("w") as outFile:
-            outFile.write(workflowString)
+        workflow_path = snakemake_path / (datetime.datetime.now().strftime("%y%m%d_%H%M%S") + ".Snakefile")
+        with workflow_path.open("w") as outfile:
+            outfile.write(workflow_string)
 
-        return workflowPath
+        return workflow_path
 
     def get_snakemake_path(self) -> Path:
         """Get the directory for storing files related to snakemake.
 
         Returns: the snakemake path as a string
         """
-        return self.analysisPath / "snakemake"
+        return self.analysis_path / "snakemake"
 
     def save_figure(
         self,
-        analysisTask: TaskOrName,
+        task: TaskOrName,
         figure: plt.Figure,
-        figureName: str,
+        figure_name: str,
         subdirectory: str = "figures",
         formats=[".png", ".pdf"],
     ) -> None:
@@ -149,24 +143,23 @@ class DataSet(object):
         This function will save the figure in both png and pdf formats.
 
         Args:
-            analysisTask: the analysis task that generated this figure.
+            task: the analysis task that generated this figure.
             figure: the figure handle for the figure to save
-            figureName: the name of the file to store the figure in, excluding
+            figure_name: the name of the file to store the figure in, excluding
                     extension
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
             formats: formats to save figure as.
         """
-        savePath = self.get_analysis_subdirectory(analysisTask, subdirectory) / figureName
+        save_path = self.get_analysis_subdirectory(task, subdirectory) / figure_name
 
         if ".png" in formats:
-            figure.savefig(savePath.with_suffix(".png"), pad_inches=0)
+            figure.savefig(save_path.with_suffix(".png"), pad_inches=0)
         if ".pdf" in formats:
-            figure.savefig(savePath.with_suffix(".pdf"), transparent=True, pad_inches=0)
+            figure.savefig(save_path.with_suffix(".pdf"), transparent=True, pad_inches=0)
 
-    def figure_exists(self, analysisTask: TaskOrName, figureName: str, subdirectory: str = "figures") -> bool:
-        """Determine if a figure with the specified name has been
-        saved within the results for the specified analysis task.
+    def figure_exists(self, task: TaskOrName, figure_name: str, subdirectory: str = "figures") -> bool:
+        """Determine if a figure with the specified name exists for the specified analysis task.
 
         This function only checks for the png formats.
 
@@ -177,84 +170,55 @@ class DataSet(object):
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
         """
-        savePath = self.get_analysis_subdirectory(analysisTask, subdirectory) / (figureName + ".png")
-        return savePath.exists()
+        save_path = self.get_analysis_subdirectory(task, subdirectory) / f"{figure_name}.png"
+        return save_path.exists()
 
     def get_analysis_image_set(
-        self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int = None
+        self, task: TaskOrName, image_name: str, image_index: int = None
     ) -> np.ndarray:
         """Get an analysis image set saved in the analysis for this data set.
 
         Args:
-            analysisTask: the analysis task that generated and stored the
+            task: the analysis task that generated and stored the
                 image set.
-            imageBaseName: the base name of the image
-            imageIndex: index of the image set to retrieve
+            image_name: the base name of the image
+            image_index: index of the image set to retrieve
         """
-        return tifffile.imread(self._analysis_image_name(analysisTask, imageBaseName, imageIndex))
-
-    def get_analysis_image(
-        self,
-        analysisTask: TaskOrName,
-        imageBaseName: str,
-        imageIndex: int,
-        imagesPerSlice: int,
-        sliceIndex: int,
-        frameIndex: int,
-    ) -> np.ndarray:
-        """Get an image from an image set save in the analysis for this
-        data set.
-
-        Args:
-            analysisTask: the analysis task that generated and stored the
-                image set.
-            imageBaseName: the base name of the image
-            imageIndex: index of the image set to retrieve
-            imagesPerSlice: the number of images in each slice of the image
-                file
-            sliceIndex: the index of the slice to get the image
-            frameIndex: the index of the frame in the specified slice
-        """
-        # TODO - It may be useful to add a function that gets all
-        # frames in a slice
-        imageFile = tifffile.TiffFile(self._analysis_image_name(analysisTask, imageBaseName, imageIndex))
-        indexInFile = sliceIndex * imagesPerSlice + frameIndex
-        return imageFile.asarray(key=int(indexInFile))
+        return tifffile.imread(self._analysis_image_name(task, image_name, image_index))
 
     def writer_for_analysis_images(
-        self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int = None, imagej: bool = False
+        self, task: TaskOrName, image_name: str, image_index: int = None, imagej: bool = False
     ) -> tifffile.TiffWriter:
         """Get a writer for writing tiff files from an analysis task.
 
         Args:
-            analysisTask:
-            imageBaseName:
-            imageIndex:
+            task:
+            image_name:
+            image_index:
             imagej:
         Returns:
 
         """
-        return tifffile.TiffWriter(self._analysis_image_name(analysisTask, imageBaseName, imageIndex), imagej=imagej)
+        return tifffile.TiffWriter(self._analysis_image_name(task, image_name, image_index), imagej=imagej)
 
     @staticmethod
-    def analysis_tiff_description(sliceCount: int, frameCount: int) -> Dict:
-        imageDescription = {
+    def analysis_tiff_description(slice_count: int, frame_count: int) -> Dict:
+        return {
             "ImageJ": "1.47a\n",
-            "images": sliceCount * frameCount,
+            "images": slice_count * frame_count,
             "channels": 1,
-            "slices": sliceCount,
-            "frames": frameCount,
+            "slices": slice_count,
+            "frames": frame_count,
             "hyperstack": True,
             "loop": False,
         }
-        return imageDescription
 
     def _analysis_image_name(self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int) -> str:
         destPath = self.get_analysis_subdirectory(analysisTask, subdirectory="images")
         if imageIndex is None:
-            return destPath / imageBaseName + ".tif"
+            return destPath / (imageBaseName + ".tif")
         else:
-            return destPath / imageBaseName + str(imageIndex) + ".tif"
+            return destPath / (imageBaseName + str(imageIndex) + ".tif")
 
     def _analysis_result_save_path(
         self,
@@ -271,7 +235,7 @@ class DataSet(object):
             saveName += fileExtension
 
         if analysisTask is None:
-            return self.analysisPath / saveName
+            return self.analysis_path / saveName
         else:
             return self.get_analysis_subdirectory(analysisTask, subdirectory) / saveName
 
@@ -544,7 +508,7 @@ class DataSet(object):
         subdirectory: str = None,
     ) -> None:
         savePath = self._analysis_result_save_path(resultName, analysisName, resultIndex, subdirectory)
-        np.savetxt(savePath + ".csv", analysisResult)
+        np.savetxt(savePath.with_suffix(savePath.suffix + ".csv"), analysisResult)
 
     def load_numpy_analysis_result(
         self, resultName: str, analysisName: str, resultIndex: int = None, subdirectory: str = None
@@ -588,9 +552,9 @@ class DataSet(object):
             analysisName = analysisTask
 
         if subdirectory:
-            subdirectoryPath = self.analysisPath / analysisName / subdirectory
+            subdirectoryPath = self.analysis_path / analysisName / subdirectory
         else:
-            subdirectoryPath = self.analysisPath / analysisName
+            subdirectoryPath = self.analysis_path / analysisName
 
         if create:
             subdirectoryPath.mkdir(parents=True, exist_ok=True)
@@ -649,7 +613,7 @@ class DataSet(object):
             parameters: dict[str, str] = json.load(inFile)
             analysisModule = importlib.import_module(parameters["module"])
             analysisTask = getattr(analysisModule, parameters["class"])
-            return analysisTask(self, self.analysisPath, parameters, analysisTaskName, fragment)
+            return analysisTask(self, self.analysis_path, parameters, analysisTaskName, fragment)
 
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
         """
@@ -669,8 +633,8 @@ class DataSet(object):
         Returns: A list of the analysis task names.
         """
         analysisList = []
-        for a in os.listdir(self.analysisPath):
-            if Path(self.analysisPath, a).is_dir() and Path(self.analysisPath, a, "tasks").exists():
+        for a in os.listdir(self.analysis_path):
+            if Path(self.analysis_path, a).is_dir() and Path(self.analysis_path, a, "tasks").exists():
                 analysisList.append(a)
         analysisList.sort()
         return analysisList
@@ -754,10 +718,10 @@ class ImageDataSet(DataSet):
         self.fovDimensions = [dim * self.micronsPerPixel for dim in self.imageDimensions]
 
     def get_image_file_names(self):
-        return sorted(self.rawDataPortal.list_files(extensionList=[".dax", ".tif", ".tiff", ".zarr", ".zar"]))
+        return sorted(self.raw_data_portal.list_files(extensionList=[".dax", ".tif", ".tiff", ".zarr", ".zar"]))
 
     def load_image(self, imagePath, frameIndex):
-        with imagereader.infer_reader(self.rawDataPortal.open_file(imagePath)) as reader:
+        with imagereader.infer_reader(self.raw_data_portal.open_file(imagePath)) as reader:
             imageIn = reader.load_frame(int(frameIndex))
             if self.transpose:
                 imageIn = np.transpose(imageIn)
@@ -775,17 +739,17 @@ class ImageDataSet(DataSet):
             a three element list with [width, height, frameCount] or None
                     if the file does not exist
         """
-        with imagereader.infer_reader(self.rawDataPortal.open_file(imagePath)) as reader:
+        with imagereader.infer_reader(self.raw_data_portal.open_file(imagePath)) as reader:
             return reader.film_size()
 
     def _import_microscope_parameters(self, microscopeParametersName):
         sourcePath = merlin.MICROSCOPE_PARAMETERS_HOME / microscopeParametersName
-        destPath = self.analysisPath / "microscope_parameters.json"
+        destPath = self.analysis_path / "microscope_parameters.json"
 
         shutil.copyfile(sourcePath, destPath)
 
     def _load_microscope_parameters(self):
-        path = self.analysisPath / "microscope_parameters.json"
+        path = self.analysis_path / "microscope_parameters.json"
 
         if os.path.exists(path):
             with open(path) as inputFile:
@@ -819,7 +783,7 @@ class ImageDataSet(DataSet):
             imagePath: the path to the image file (.dax or .tif)
         Returns: the metadata from the associated xml file
         """
-        filePortal = self.rawDataPortal.open_file(imagePath).get_sibling_with_extension(".xml")
+        filePortal = self.raw_data_portal.open_file(imagePath).get_sibling_with_extension(".xml")
         return xmltodict.parse(filePortal.read_as_text())
 
 
@@ -1048,11 +1012,11 @@ class MERFISHDataSet(ImageDataSet):
             metadata = self.get_image_xml_metadata(self.dataOrganization.get_image_filename(0, f))
             currentPositions = metadata["settings"]["acquisition"]["stage_position"]["#text"].split(",")
             positionData.append([float(x) for x in currentPositions])
-        positionPath = self.analysisPath / "positions.csv"
+        positionPath = self.analysis_path / "positions.csv"
         np.savetxt(positionPath, np.array(positionData), delimiter=",")
 
     def _load_positions(self):
-        positionPath = self.analysisPath / "positions.csv"
+        positionPath = self.analysis_path / "positions.csv"
         if not positionPath.exists():
             self._import_positions_from_metadata()
         self.positions = pandas.read_csv(positionPath, header=None, names=["X", "Y"])
@@ -1060,7 +1024,7 @@ class MERFISHDataSet(ImageDataSet):
 
     def _import_positions(self, positionFileName):
         sourcePath = merlin.POSITION_HOME / positionFileName
-        destPath = self.analysisPath / "positions.csv"
+        destPath = self.analysis_path / "positions.csv"
 
         shutil.copyfile(sourcePath, destPath)
 
@@ -1127,7 +1091,7 @@ class MERFISHDataSet(ImageDataSet):
         return list(self.overlaps.keys())
 
     def get_overlap_mask(self, fov, trim=False):
-        mask = np.zeros(self.imageDimensions)
+        mask = np.zeros(self.imageDimensions, dtype=np.uint16)
         if trim:
             overlapList = self.trim_overlaps
         else:
