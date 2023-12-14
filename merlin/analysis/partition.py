@@ -174,6 +174,9 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
         self.counts_per_cell = matrix
 
     def metadata(self) -> dict:
-        return {
-            "fraction": len(self.barcodes[~self.barcodes["cell_id"].str.endswith("__0")]) / len(self.barcodes)
-        }
+        if len(self.barcodes) == 0:
+            return {"fraction": 0}
+        else:
+            return {
+                "fraction": len(self.barcodes[~self.barcodes["cell_id"].str.endswith("__0")]) / len(self.barcodes)
+            }
