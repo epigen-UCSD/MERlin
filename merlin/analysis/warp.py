@@ -1,18 +1,22 @@
+import pickle
+from functools import cached_property
 from typing import List, Tuple, Union
 
 import cv2
 import numpy as np
+import torch
 from scipy import ndimage
 from scipy.signal import fftconvolve
+from scipy.spatial import cKDTree
 from skimage import registration, transform
 from sklearn.neighbors import NearestNeighbors
 
 from merlin.core import analysistask
 from merlin.util import aberration
+from merlin.util.deconvolve import deconvolve_sdeconv
 
 
 class Warp(analysistask.AnalysisTask):
-
     """
     An abstract class for warping a set of images so that the corresponding
     pixels align between images taken in different imaging rounds.
@@ -142,7 +146,6 @@ class Warp(analysistask.AnalysisTask):
 
 
 class FiducialCorrelationWarp(Warp):
-
     """
     An analysis task that warps a set of images taken in different imaging
     rounds based on the crosscorrelation between fiducial images.
@@ -475,3 +478,315 @@ class FiducialAlign(analysistask.AnalysisTask):
             if len(drifts) > 2:
                 metadata[f"Round {i}"]["z drift"] = drifts[0]
         return metadata
+
+
+class PrecomputedAlign(analysistask.AnalysisTask):
+    def setup(self) -> None:
+        super().setup(parallel=True)
+
+    def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
+        """Get the set of transformed images for the specified fov.
+
+        Args:
+            fov: index of the field of view
+            chromaticCorrector: the ChromaticCorrector to use to chromatically
+                correct the images. If not supplied, no correction is
+                performed.
+
+        Returns
+            a 4-dimensional numpy array containing the aligned images. The
+                images are arranged as [channel, zIndex, x, y]
+
+        """
+        channels = self.dataSet.get_data_organization().get_data_channels()
+        z_indexes = range(len(self.dataSet.get_z_positions()))
+        return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
+
+    def get_transformation(self, channel: int = None) -> np.ndarray:
+        """Get the transformations for aligning images for the specified field of view."""
+        drifts = pickle.load(open(self.parameters["drift_dir"] + f"/driftNew_Conv_zscan__{self.fragment}--.pkl", "rb"))
+        drifts = {int(k.split("/")[-2].split("_")[0].strip("H")): v[0] for k, v in zip(drifts[1], drifts[0])}
+        if channel is None:
+            return drifts
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)]
+
+    def get_aligned_image(
+        self, fov: str, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
+    ) -> np.ndarray:
+        """Get the specified transformed image.
+
+        Args:
+            fov: index of the field of view
+            dataChannel: index of the data channel
+            zIndex: index of the z position
+            chromaticCorrector: the ChromaticCorrector to use to chromatically
+                correct the images. If not supplied, no correction is
+                performed.
+
+        Returns
+            a 2-dimensional numpy array containing the specified image
+        """
+        try:
+            zdrift, xdrift, ydrift = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            zdrift = 0
+            xdrift, ydrift = self.get_transformation(channel)
+        try:
+            zdrift_int = np.round(zdrift).astype(int)
+            zdrift_frac = zdrift - zdrift_int
+            input_image = self.dataSet.get_raw_image(
+                channel,
+                fov,
+                self.dataSet.z_index_to_position(z_index - zdrift_int),
+            )
+            if zdrift_frac != 0:
+                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
+                input_image2 = self.dataSet.get_raw_image(
+                    channel,
+                    fov,
+                    self.dataSet.z_index_to_position(z_index - z_index2),
+                )
+                input_image = input_image * (1 - zdrift_frac) + input_image2 * zdrift_frac
+            if chromatic_corrector is not None:
+                image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+                input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
+        except IndexError:  # Z drift outside bounds
+            input_image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(input_image)
+        else:
+            if self.dataSet.microscopeParameters["flip_horizontal"]:
+                xdrift = -xdrift
+            if self.dataSet.microscopeParameters["flip_vertical"]:
+                ydrift = -ydrift
+            return ndimage.shift(input_image, [-xdrift, -ydrift], order=0)
+
+    def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
+        _, x, y = self.get_transformation(channel)
+        input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+        return ndimage.shift(input_image[z_index], [-x, y], order=0)
+
+
+class AlignDapiFeatures(analysistask.AnalysisTask):
+    def setup(self) -> None:
+        super().setup(parallel=True, threads=8)
+
+        self.add_dependencies({"flat_field_task": []})
+
+        self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": 0})
+
+        self.define_results("drifts")
+
+    def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
+        """Get the set of transformed images for the specified fov.
+
+        Args:
+            fov: index of the field of view
+            chromaticCorrector: the ChromaticCorrector to use to chromatically
+                correct the images. If not supplied, no correction is
+                performed.
+
+        Returns:
+            a 4-dimensional numpy array containing the aligned images. The
+                images are arranged as [channel, zIndex, x, y]
+
+        """
+        channels = self.dataSet.get_data_organization().get_data_channels()
+        z_indexes = range(len(self.dataSet.get_z_positions()))
+        return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
+
+    def get_transformation(self, channel: int = None) -> np.ndarray:
+        """Get the transformations for aligning images for the specified field of view."""
+        drifts = self.load_result("drifts")
+        if channel is None:
+            return drifts
+        imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
+        if drifts[imaging_round] is None:
+            return np.array([0, 0, 0])
+        return drifts[imaging_round][0]
+
+    def get_aligned_image(
+        self, fov: str, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
+    ) -> np.ndarray:
+        """Get the specified transformed image.
+
+        Args:
+            fov: index of the field of view
+            dataChannel: index of the data channel
+            zIndex: index of the z position
+            chromaticCorrector: the ChromaticCorrector to use to chromatically
+                correct the images. If not supplied, no correction is
+                performed.
+
+        Returns:
+            a 2-dimensional numpy array containing the specified image
+        """
+        try:
+            zdrift, xdrift, ydrift = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            zdrift = 0
+            xdrift, ydrift = self.get_transformation(channel)
+        try:
+            zdrift_int = np.round(zdrift).astype(int)
+            zdrift_frac = zdrift - zdrift_int
+            input_image = self.dataSet.get_raw_image(
+                channel,
+                fov,
+                self.dataSet.z_index_to_position(z_index - zdrift_int),
+            )
+            if zdrift_frac != 0:
+                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
+                input_image2 = self.dataSet.get_raw_image(
+                    channel,
+                    fov,
+                    self.dataSet.z_index_to_position(z_index - z_index2),
+                )
+                input_image = input_image * (1 - zdrift_frac) + input_image2 * zdrift_frac
+            if chromatic_corrector is not None:
+                image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+                input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
+        except IndexError:  # Z drift outside bounds
+            input_image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(input_image)
+        else:
+            if self.dataSet.microscopeParameters["flip_horizontal"]:
+                xdrift = -xdrift
+            if self.dataSet.microscopeParameters["flip_vertical"]:
+                ydrift = -ydrift
+            return ndimage.shift(input_image, [xdrift, ydrift], order=0)
+
+    def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
+        _, x, y = self.get_transformation(channel)
+        input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+        return ndimage.shift(input_image[z_index], [x, -y], order=0)
+
+    @cached_property
+    def psf(self):
+        return np.load(self.parameters["psf_file"])
+
+    def preprocess_image(self, im):
+        im = self.flat_field_task.process_image(im)
+        im = deconvolve_sdeconv(im, self.psf)
+        im = np.array([im_ - cv2.blur(im_, (30, 30)) for im_ in im], dtype=np.float32)
+        return im / np.std(im)
+
+    def get_local_maxfast_tensor(self, im):
+        im_dif = torch.from_numpy(im)
+        z, x, y = torch.where(im_dif > self.parameters["th_fit"])
+        zmax, xmax, ymax = im_dif.shape
+
+        def get_ind(x, xmax):
+            # modify x_ to be within image
+            x_ = torch.clone(x)
+            bad = x_ < 0
+            x_[bad] = -x_[bad]
+            bad = x_ >= xmax
+            x_[bad] = xmax - x_[bad] - 2
+            return x_
+
+        delta = self.parameters["delta"]
+        for d1 in range(-delta, delta + 1):
+            for d2 in range(-delta, delta + 1):
+                for d3 in range(-delta, delta + 1):
+                    if (d1 * d1 + d2 * d2 + d3 * d3) <= (delta * delta):
+                        z_ = get_ind(z + d1, zmax)
+                        x_ = get_ind(x + d2, xmax)
+                        y_ = get_ind(y + d3, ymax)
+                        keep = im_dif[z, x, y] >= im_dif[z_, x_, y_]
+                        z, x, y = z[keep], x[keep], y[keep]
+
+        if len(x) == 0:
+            return []
+        delta_fit = self.parameters["delta_fit"]
+        if delta_fit > 0:
+            d1, d2, d3 = np.indices([2 * delta_fit + 1] * 3).reshape([3, -1]) - delta_fit
+            kp = (d1 * d1 + d2 * d2 + d3 * d3) <= (delta_fit * delta_fit)
+            d1, d2, d3 = d1[kp], d2[kp], d3[kp]
+            d1 = torch.from_numpy(d1)
+            d2 = torch.from_numpy(d2)
+            d3 = torch.from_numpy(d3)
+            im_centers0 = (z.reshape(-1, 1) + d1).T
+            im_centers1 = (x.reshape(-1, 1) + d2).T
+            im_centers2 = (y.reshape(-1, 1) + d3).T
+            z_ = get_ind(im_centers0, zmax)
+            x_ = get_ind(im_centers1, xmax)
+            y_ = get_ind(im_centers2, ymax)
+            im_centers3 = im_dif[z_, x_, y_]
+
+            bk = torch.min(im_centers3, 0).values
+            im_centers3 = im_centers3 - bk
+            im_centers3 = im_centers3 / torch.sum(im_centers3, 0)
+
+            z = torch.sum(im_centers0 * im_centers3, 0)
+            x = torch.sum(im_centers1 * im_centers3, 0)
+            y = torch.sum(im_centers2 * im_centers3, 0)
+        return torch.stack([z, x, y]).T.cpu().detach().numpy()
+
+    def get_im_from_Xh(self, Xh, resc=5):
+        X = np.round(Xh[:, :3] / resc).astype(int)
+        Xm = np.min(X, axis=0)
+        X -= Xm
+        sz = np.max(X, axis=0)
+        imf = np.zeros(sz + 1, dtype=np.float32)
+        imf[tuple(X.T)] = 1
+        return imf, Xm
+
+    def get_Xtzxy(self, X, X_ref, tzxy0, resc, learn=0.8):
+        tzxy = tzxy0
+        Npts = 0
+        for it_ in range(5):
+            XT = X - tzxy
+            ds, inds = cKDTree(X_ref).query(XT)
+            keep = ds < resc * learn**it_
+            X_ref_ = X_ref[inds[keep]]
+            X_ = X[keep]
+            tzxy = np.mean(X_ - X_ref_, axis=0)
+            Npts = np.sum(keep)
+        return tzxy, Npts
+
+    def get_best_translation_points(self, X, X_ref, resc=10, learn=1):
+        im, Xm = self.get_im_from_Xh(X, resc=resc)
+        im_ref, Xm_ref = self.get_im_from_Xh(X_ref, resc=resc)
+
+        im_cor = fftconvolve(im, im_ref[::-1, ::-1, ::-1])
+        tzxy = np.array(np.unravel_index(np.argmax(im_cor), im_cor.shape)) - im_ref.shape + 1 + Xm - Xm_ref
+        tzxy = tzxy * resc
+        Npts = 0
+        tzxy, Npts = self.get_Xtzxy(X, X_ref, tzxy, resc=resc, learn=learn)
+        return tzxy, Npts
+
+    def calculate_translation(self, Xh_plus1, Xh_minus1, Xh_plus2, Xh_minus2, resc=5):
+        tzxyf, tzxy_plus, tzxy_minus = np.array([0, 0, 0]), np.array([0, 0, 0]), np.array([0, 0, 0])
+        N_plus, N_minus = 0, 0
+        if (len(Xh_plus1) > 0) and (len(Xh_plus2) > 0):
+            X = Xh_plus1[:, :3]
+            X_ref = Xh_plus2[:, :3]
+            tzxy_plus, N_plus = self.get_best_translation_points(X, X_ref, resc=resc)
+        if (len(Xh_minus1) > 0) and (len(Xh_minus2) > 0):
+            X = Xh_minus1[:, :3]
+            X_ref = Xh_minus2[:, :3]
+            tzxy_minus, N_minus = self.get_best_translation_points(X, X_ref, resc=resc)
+        if np.max(np.abs(tzxy_minus - tzxy_plus)) <= 2:
+            tzxyf = -(tzxy_plus * N_plus + tzxy_minus * N_minus) / (N_plus + N_minus)
+        else:
+            tzxyf = -[tzxy_plus, tzxy_minus][np.argmax([N_plus, N_minus])]
+
+        return [tzxyf, tzxy_plus, tzxy_minus, N_plus, N_minus]
+
+    def run_analysis(self) -> None:
+        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], self.fragment)
+        fixed_image = self.preprocess_image(fixed_image)
+        Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image)
+        Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image)
+
+        self.drifts = {}
+        for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
+            imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
+            if imaging_round == self.parameters["reference_round"]:
+                drift = None
+            else:
+                moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+                moving_image = self.preprocess_image(moving_image)
+                Xh_plus_moving = self.get_local_maxfast_tensor(moving_image)
+                Xh_minus_moving = self.get_local_maxfast_tensor(-moving_image)
+                drift = self.calculate_translation(Xh_plus_fixed, Xh_minus_fixed, Xh_plus_moving, Xh_minus_moving)
+            self.drifts[imaging_round] = drift
