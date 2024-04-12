@@ -1,5 +1,5 @@
-from typing import List
 from functools import partial
+from typing import List
 
 import cv2
 import networkx as nx
@@ -8,6 +8,7 @@ import pandas as pd
 import rtree
 from cellpose import models as cpmodels
 from cellpose import utils
+from scipy import ndimage
 from skimage import measure, segmentation
 from skimage.measure import regionprops_table
 from skimage.segmentation import expand_labels
@@ -17,7 +18,6 @@ from merlin.util import spatialfeature, watershed
 
 
 class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
-
     """
     An abstract analysis class that saves features into a spatial feature
     database.
@@ -40,7 +40,6 @@ class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
 
 
 class WatershedSegment(FeatureSavingAnalysisTask):
-
     """
     An analysis task that determines the boundaries of features in the
     image data in each field of view using a watershed algorithm.
@@ -324,6 +323,208 @@ class CellposeSegment(analysistask.AnalysisTask):
         return {"cells": len(self.cell_metadata)}
 
 
+class CellposeSegment3D(analysistask.AnalysisTask):
+    def setup(self) -> None:
+        super().setup(parallel=True, threads=8)
+
+        self.add_dependencies({"global_align_task": []})
+        self.add_dependencies({"flat_field_task": []}, optional=True)
+
+        self.set_default_parameters(
+            {
+                "channel": "DAPI",
+                "cellpose_model": "nuclei",
+                "diameter": None,
+                "cellprob_threshold": None,
+                "flow_threshold": None,
+                "minimum_size": None,
+                "downscale_xy": 1,
+                "downscale_z": 1,
+            }
+        )
+
+        self.define_results("mask", ("cell_metadata", {"index": False}))
+
+        self.channelIndex = self.dataSet.get_data_organization().get_data_channel_index(self.parameters["channel"])
+
+    def load_mask(self):
+        mask = self.load_result("mask")
+        shape = (
+            mask.shape[0] * self.parameters["downscale_z"],
+            mask.shape[1] * self.parameters["downscale_xy"],
+            mask.shape[2] * self.parameters["downscale_xy"],
+        )
+        z_int = np.round(np.linspace(0, mask.shape[0] - 1, shape[0])).astype(int)
+        x_int = np.round(np.linspace(0, mask.shape[1] - 1, shape[1])).astype(int)
+        y_int = np.round(np.linspace(0, mask.shape[2] - 1, shape[2])).astype(int)
+        return mask[z_int][:, x_int][:, :, y_int]
+
+    def load_cell_metadata(self):
+        return self.dataSet.load_dataframe_from_csv(
+            "cell_metadata", self.analysis_name, self.fragment, subdirectory="cell_metadata"
+        )
+
+    def load_image(self, zIndex):
+        image = self.dataSet.get_raw_image(self.channelIndex, self.fragment, zIndex)
+        if "flat_field_task" in self.dependencies:
+            image = self.flat_field_task.process_image(image)
+        return image[:: self.parameters["downscale_xy"], :: self.parameters["downscale_xy"]]
+
+    def slice_pair_to_info(self, pair):
+        sl1, sl2 = pair
+        xm, ym, sx, sy = sl2.start, sl1.start, sl2.stop - sl2.start, sl1.stop - sl1.start
+        A = sx * sy
+        return [xm, ym, sx, sy, A]
+
+    def get_coords(self, imlab1, infos1, cell1):
+        xm, ym, sx, sy, A, icl = infos1[cell1 - 1]
+        return np.array(np.where(imlab1[ym : ym + sy, xm : xm + sx] == icl)).T + [ym, xm]
+
+    def cells_to_coords(self, imlab1, return_labs=False):
+        """return the coordinates of cells with some additional info"""
+        infos1 = [
+            self.slice_pair_to_info(pair) + [icell + 1]
+            for icell, pair in enumerate(ndimage.find_objects(imlab1))
+            if pair is not None
+        ]
+        cms1 = np.array([np.mean(self.get_coords(imlab1, infos1, cl + 1), 0) for cl in range(len(infos1))])
+        cms1 = cms1[:, ::-1]
+        ies = [info[-1] for info in infos1]
+        if return_labs:
+            return imlab1.copy(), infos1, cms1, ies
+        return imlab1.copy(), infos1, cms1
+
+    def resplit(self, cells1, cells2, nmin=100):
+        """intermediate function used by standard_segmentation.
+        Decide when comparing two planes which cells to split"""
+        imlab1, infos1, cms1 = self.cells_to_coords(cells1)
+        imlab2, infos2, cms2 = self.cells_to_coords(cells2)
+
+        # find centers 2 within the cells1 and split cells1
+        cms2_ = np.round(cms2).astype(int)
+        cells2_1 = imlab1[cms2_[:, 1], cms2_[:, 0]]
+        imlab1_cells = [0] + [info[-1] for info in infos1]
+        cells2_1 = [imlab1_cells.index(cl_) for cl_ in cells2_1]  # reorder coords
+        # [for e1,e2 in zip(np.unique(cells2_1,return_counts=True)) if e1>0]
+        dic_cell2_1 = {}
+        for cell1, cell2 in enumerate(cells2_1):
+            dic_cell2_1[cell2] = dic_cell2_1.get(cell2, []) + [cell1 + 1]
+        dic_cell2_1_split = {cell: dic_cell2_1[cell] for cell in dic_cell2_1 if len(dic_cell2_1[cell]) > 1 and cell > 0}
+        cells1_split = list(dic_cell2_1_split.keys())
+        imlab1_cp = imlab1.copy()
+        number_of_cells_to_split = len(cells1_split)
+        for cell1_split in cells1_split:
+            count = np.max(imlab1_cp) + 1
+            cells2_to1 = dic_cell2_1_split[cell1_split]
+            X1 = self.get_coords(imlab1, infos1, cell1_split)
+            X2s = [self.get_coords(imlab2, infos2, cell2) for cell2 in cells2_to1]
+            from scipy.spatial.distance import cdist
+
+            X1_K = np.argmin([np.min(cdist(X1, X2), axis=-1) for X2 in X2s], 0)
+
+            for k in range(len(X2s)):
+                X_ = X1[X1_K == k]
+                if len(X_) > nmin:
+                    imlab1_cp[X_[:, 0], X_[:, 1]] = count + k
+                else:
+                    # number_of_cells_to_split-=1
+                    pass
+        imlab1_, infos1_, cms1_ = self.cells_to_coords(imlab1_cp)
+        return imlab1_, infos1_, cms1_, number_of_cells_to_split
+
+    def converge(self, cells1, cells2):
+        imlab1, infos1, cms1, labs1 = self.cells_to_coords(cells1, return_labs=True)
+        imlab2, infos2, cms2 = self.cells_to_coords(cells2)
+
+        # find centers 2 within the cells1 and split cells1
+        cms2_ = np.round(cms2).astype(int)
+        cells2_1 = imlab1[cms2_[:, 1], cms2_[:, 0]]
+        imlab1_cells = [0] + [info[-1] for info in infos1]
+        cells2_1 = [imlab1_cells.index(cl_) for cl_ in cells2_1]  # reorder coords
+        # [for e1,e2 in zip(np.unique(cells2_1,return_counts=True)) if e1>0]
+        dic_cell2_1 = {}
+        for cell1, cell2 in enumerate(cells2_1):
+            dic_cell2_1[cell2] = dic_cell2_1.get(cell2, []) + [cell1 + 1]
+
+        dic_cell2_1_match = {cell: dic_cell2_1[cell] for cell in dic_cell2_1 if cell > 0}
+        cells2_kp = [e_ for e in dic_cell2_1_match for e_ in dic_cell2_1_match[e]]
+        modify_cells2 = np.setdiff1d(np.arange(len(cms2)), cells2_kp)
+        imlab2_ = imlab2 * 0
+        for cell1 in dic_cell2_1_match:
+            for cell2 in dic_cell2_1_match[cell1]:
+                xm, ym, sx, sy, A, icl = infos2[cell2 - 1]
+                im_sm = imlab2[ym : ym + sy, xm : xm + sx]
+                imlab2_[ym : ym + sy, xm : xm + sx][im_sm == icl] = labs1[cell1 - 1]
+        count_cell = max(np.max(imlab2_), np.max(labs1))
+        for cell2 in modify_cells2:
+            count_cell += 1
+            xm, ym, sx, sy, A, icl = infos2[cell2 - 1]
+            im_sm = imlab2[ym : ym + sy, xm : xm + sx]
+            imlab2_[ym : ym + sy, xm : xm + sx][im_sm == icl] = count_cell
+        return imlab1, imlab2_
+
+    def run_analysis(self):
+        model = cpmodels.Cellpose(gpu=False, model_type=self.parameters["cellpose_model"])
+        zPositions = self.dataSet.get_z_positions()[:: self.parameters["downscale_z"]]
+        im_dapi_3d = np.array([self.load_image(self.dataSet.position_to_z_index(zIndex)) for zIndex in zPositions])
+        masks_all = []
+        for img in im_dapi_3d:
+            masks, _, _, _ = model.eval(
+                img,
+                diameter=self.parameters["diameter"],
+                channels=[0, 0],
+                flow_threshold=self.parameters["flow_threshold"],
+                cellprob_threshold=self.parameters["cellprob_threshold"],
+                min_size=50,
+            )
+            masks_all.append(masks)
+        masks_all = np.array(masks_all)
+
+        sec_half = list(np.arange(int(len(masks_all) / 2), len(masks_all) - 1))
+        first_half = list(np.arange(0, int(len(masks_all) / 2)))[::-1]
+        indexes = first_half + sec_half
+        masks_all_cp = masks_all.copy()
+        max_split = 1
+        niter = 0
+        while max_split > 0 and niter < 3:
+            max_split = 0
+            for index in indexes:
+                cells1, cells2 = masks_all_cp[index], masks_all_cp[index + 1]
+                if not cells1.any() or not cells2.any():
+                    continue
+                imlab1_, infos1_, cms1_, no1 = self.resplit(cells1, cells2)
+                imlab2_, infos2_, cms2_, no2 = self.resplit(cells2, cells1)
+                masks_all_cp[index], masks_all_cp[index + 1] = imlab1_, imlab2_
+                max_split += max(no1, no2)
+                # print(no1,no2)
+            niter += 1
+        masks_all_cpf = masks_all_cp.copy()
+        for index in range(len(masks_all_cpf) - 1):
+            cells1, cells2 = masks_all_cpf[index], masks_all_cpf[index + 1]
+            if not cells1.any() or not cells2.any():
+                continue
+            cells1_, cells2_ = self.converge(cells1, cells2)
+            masks_all_cpf[index + 1] = cells2_
+        self.mask = masks_all_cpf
+        if self.parameters["minimum_size"]:
+            sizes = pd.DataFrame(regionprops_table(self.mask, properties=["label", "area"]))
+            self.mask[np.isin(self.mask, sizes[sizes["area"] < self.parameters["minimum_size"]]["label"])] = 0
+
+        cell_metadata = pd.DataFrame(regionprops_table(self.mask, properties=["label", "area", "centroid"]))
+        cell_metadata.columns = ["cell_id", "volume", "z", "x", "y"]
+        downscale = self.parameters["downscale_xy"]
+        cell_metadata["x"] *= downscale
+        cell_metadata["y"] *= downscale
+        cell_metadata["z"] *= self.parameters["downscale_z"]
+        cell_metadata["volume"] *= downscale * downscale * self.parameters["downscale_z"]
+        global_x, global_y = self.global_align_task.fov_coordinates_to_global(
+            self.fragment, cell_metadata[["x", "y"]].T.to_numpy()
+        )
+        cell_metadata["global_x"] = global_x
+        cell_metadata["global_y"] = global_y
+        self.cell_metadata = cell_metadata
+
+
 class LinkCellsInOverlaps(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
@@ -410,8 +611,8 @@ class LinkCellsInOverlaps(analysistask.AnalysisTask):
         """Identify the cells overlapping FOVs that are the same cell."""
         a, b = self.dataSet.get_overlap(self.fragment)
         pairs = set()
-        segment_a = self.dataSet.load_analysis_task("CellposeSegment", a.fov)
-        segment_b = self.dataSet.load_analysis_task("CellposeSegment", b.fov)
+        segment_a = self.dataSet.load_analysis_task(self.parameters["segment_task"], a.fov)
+        segment_b = self.dataSet.load_analysis_task(self.parameters["segment_task"], b.fov)
         mask_a = segment_a.load_mask()
         mask_b = segment_b.load_mask()
         # Get portions of masks that overlap
