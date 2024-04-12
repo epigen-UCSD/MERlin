@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
+import torch
 from scipy import ndimage
+from sdeconv.deconv import SWiener
+from sdeconv.core import SSettings
 
 from merlin.util import matlab
 
@@ -127,7 +130,7 @@ def deconvolve_lucyrichardson(image: np.ndarray, windowSize: int, sigmaG: float,
 
 
 def deconvolve_lucyrichardson_guo(
-    image: np.ndarray, windowSize: int, sigmaG: float, iterationCount: int
+    image: np.ndarray, window_size: int, sigma: float, iterations: int, *, gpu: bool = False
 ) -> np.ndarray:
     """Performs Lucy-Richardson deconvolution on the provided image using a
     Gaussian point spread function. This version used the optimized
@@ -142,11 +145,12 @@ def deconvolve_lucyrichardson_guo(
             This must be an odd number.
         sigmaG: the standard deviation of the Gaussian point spread function
         iterationCount: the number of iterations to perform
+        gpu: Whether to perform operations on the GPU
 
     Returns:
         the deconvolved image
     """
-    [pf, pb] = calculate_projectors(windowSize, sigmaG)
+    [pf, pb] = calculate_projectors(window_size, sigma)
 
     eps = 1.0e-6
     i_max = 2**16 - 1
@@ -154,7 +158,7 @@ def deconvolve_lucyrichardson_guo(
     ek = np.copy(image)
     np.clip(ek, eps, None, ek)
 
-    for i in range(iterationCount):
+    for _ in range(iterations):
         ekf = cv2.filter2D(ek, -1, pf, borderType=cv2.BORDER_REPLICATE)
         np.clip(ekf, eps, i_max, ekf)
 
@@ -162,3 +166,24 @@ def deconvolve_lucyrichardson_guo(
         np.clip(ek, eps, i_max, ek)
 
     return ek
+
+
+def deconvolve_sdeconv(im, psf):
+    obj = SSettings.instance()
+    obj.device = "cpu"
+    psff = np.zeros(im.shape, dtype=np.float32)
+
+    slices = [
+        (
+            (slice((s_psff - s_psf_full_) // 2, (s_psff + s_psf_full_) // 2), slice(None))
+            if s_psff > s_psf_full_
+            else (slice(None), slice((s_psf_full_ - s_psff) // 2, (s_psf_full_ + s_psff) // 2))
+        )
+        for s_psff, s_psf_full_ in zip(psff.shape, psf.shape)
+    ]
+    sl_psff, sl_psf_full_ = list(zip(*slices))
+    psff[sl_psff] = psf[sl_psf_full_]
+
+    pad = int(np.min(list(np.array(im.shape) - 1) + [50]))
+    filter_ = SWiener(torch.from_numpy(psff), beta=0.001, pad=pad)
+    return filter_(torch.from_numpy(im)).detach().numpy().astype(np.float32)
