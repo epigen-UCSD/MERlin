@@ -96,6 +96,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python")
         f"  input: {generate_input(task)}",
         f"  output: {generate_output(task)}",
         f"  message: '{generate_message(task)}'",
+        f"  threads: {task.threads}",
         f"  shell: '{generate_shell_command(task, python_path)}'",
     ]
     if task.has_finalize_step():

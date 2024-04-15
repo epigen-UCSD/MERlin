@@ -16,8 +16,8 @@ class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
     An abstract analysis class that saves barcodes into a barcode database.
     """
 
-    def setup(self, *, parallel: bool) -> None:
-        super().setup(parallel=parallel)
+    def setup(self, *, parallel: bool, threads: int = 1) -> None:
+        super().setup(parallel=parallel, threads=threads)
 
     def reset_analysis(self, fragmentIndex: int = None) -> None:
         super().reset_analysis()
@@ -38,7 +38,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     """
 
     def setup(self) -> None:
-        super().setup(parallel=True)
+        super().setup(parallel=True, threads=8)
 
         self.add_dependencies(
             {

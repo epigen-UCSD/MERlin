@@ -69,11 +69,12 @@ class AnalysisTask:
         self.setup()  # Will give an error if setup() isn't implemented in a subclass, this is intentional.
         self.fragment = fragment
 
-    def setup(self, *, parallel: bool) -> None:
+    def setup(self, *, parallel: bool, threads: int = 1) -> None:
         self._fragment_list = list(self.dataSet.get_fovs()) if parallel else []
         self.dependencies = {}
         self.results = {}
         self.final_results = {}
+        self.threads = threads
 
     def __getattr__(self, attr):
         """Check if an unloaded dependency is being accessed and load it."""
