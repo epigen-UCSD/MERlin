@@ -568,7 +568,7 @@ class PrecomputedAlign(analysistask.AnalysisTask):
 
 class AlignDapiFeatures(analysistask.AnalysisTask):
     def setup(self) -> None:
-        super().setup(parallel=True, threads=8)
+        super().setup(parallel=True, threads=16)
 
         self.add_dependencies({"flat_field_task": []})
 
@@ -598,14 +598,14 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
         """Get the transformations for aligning images for the specified field of view."""
         drifts = self.load_result("drifts")
         if channel is None:
-            return drifts
+            return {k: v[0] for k, v in drifts.items()}
         imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
         if drifts[imaging_round] is None:
             return np.array([0, 0, 0])
         return drifts[imaging_round][0]
 
     def get_aligned_image(
-        self, fov: str, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
+        self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
         """Get the specified transformed image.
 
@@ -620,6 +620,13 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
         Returns:
             a 2-dimensional numpy array containing the specified image
         """
+        if z_index is None:
+            return np.array(
+                [
+                    self.get_aligned_image(fov, channel, z_index, chromatic_corrector)
+                    for z_index in range(len(self.dataSet.get_z_positions()))
+                ]
+            )
         try:
             zdrift, xdrift, ydrift = self.get_transformation(channel)
         except ValueError:  # Drift correction was not 3D
@@ -631,16 +638,16 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             input_image = self.dataSet.get_raw_image(
                 channel,
                 fov,
-                self.dataSet.z_index_to_position(z_index - zdrift_int),
+                self.dataSet.z_index_to_position(z_index + zdrift_int),
             )
             if zdrift_frac != 0:
                 z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
                 input_image2 = self.dataSet.get_raw_image(
                     channel,
                     fov,
-                    self.dataSet.z_index_to_position(z_index - z_index2),
+                    self.dataSet.z_index_to_position(z_index + z_index2),
                 )
-                input_image = input_image * (1 - zdrift_frac) + input_image2 * zdrift_frac
+                input_image = input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
             if chromatic_corrector is not None:
                 image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
                 input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
@@ -655,9 +662,20 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             return ndimage.shift(input_image, [xdrift, ydrift], order=0)
 
     def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
-        _, x, y = self.get_transformation(channel)
+        z, x, y = self.get_transformation(channel)
+        zdrift_int = np.round(z).astype(int)
+        zdrift_frac = z - zdrift_int
         input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
-        return ndimage.shift(input_image[z_index], [x, -y], order=0)
+        img = input_image[z_index + zdrift_int]
+        if zdrift_frac != 0:
+            z_index2 = zdrift_int + 1 if zdrift_int > 0 else zdrift_int - 1
+            img2 = input_image[z_index + z_index2]
+            img = img * (1 - abs(zdrift_frac)) + img2 * abs(zdrift_frac)
+        if self.dataSet.microscopeParameters["flip_horizontal"]:
+            x = -x
+        if self.dataSet.microscopeParameters["flip_vertical"]:
+            y = -y
+        return ndimage.shift(img, [x, y], order=0)
 
     @cached_property
     def psf(self):
