@@ -76,8 +76,8 @@ class AlignedBitImagesPlot(AbstractPlot):
         self.formats = [".png"]
 
     def create_plot(self, **kwargs) -> plt.Figure:
-        fragment = self.plot_task.dataSet.get_fovs()[0]
-        align_task = self.plot_task.dataSet.load_analysis_task("FiducialAlign", fragment=fragment)
+        fragment = self.plot_task.dataSet.get_fovs()[100]
+        align_task = self.plot_task.dataSet.load_analysis_task(self.plot_task.parameters["warp_task"], fragment=fragment)
         imgs = align_task.get_aligned_image_set(fragment)
         colors = self.plot_task.dataSet.dataOrganization.get_data_colors()
         channels = self.plot_task.dataSet.dataOrganization.get_channels_for_color(colors[0])
@@ -113,6 +113,74 @@ class AlignedBitImagesPlot(AbstractPlot):
                 img2 = np.zeros_like(img1)
             if len(inds) > 2:
                 img3 = imgs[inds[2], zindex, :, :]
+            else:
+                img3 = np.zeros_like(img1)
+
+            color_img2 = np.moveaxis(np.array([
+                img1 / np.percentile(img1, 99),
+                img2 / np.percentile(img2, 99),
+                img3 / np.percentile(img3, 99)
+            ]), 0, -1)
+
+            ax[i, 0].imshow(color_img1)
+            ax[i, 0].axis("off")
+            ax[i, 0].text(0, 1, channels[inds[0]], color="#ff0000", transform=ax[i,0].transAxes, ha="left", va="top")
+            if len(inds) > 1:
+                ax[i, 0].text(0, 0.97, channels[inds[1]], color="#00ff00", transform=ax[i, 0].transAxes, ha="left", va="top")
+            if len(inds) > 2:
+                ax[i, 0].text(0, 0.94, channels[inds[2]], color="#0000ff", transform=ax[i, 0].transAxes, ha="left", va="top")
+            ax[i, 0].text(0.5, 1, "Raw images", color="#ffffff", transform=ax[i, 0].transAxes, ha="center", va="top")
+            ax[i, 1].imshow(color_img2)
+            ax[i, 1].text(0.5, 1, "Aligned images", color="#ffffff", transform=ax[i, 1].transAxes, ha="center", va="top")
+            ax[i, 1].axis("off")
+        fig.tight_layout()
+
+        return fig
+
+
+class AlignedFiducialImagesPlot(AbstractPlot):
+    def __init__(self, plot_task):
+        super().__init__(plot_task)
+        self.set_required_tasks({"warp_task": "all"})
+        self.formats = [".png"]
+
+    def create_plot(self, **kwargs) -> plt.Figure:
+        fragment = self.plot_task.dataSet.get_fovs()[100]
+        align_task = self.plot_task.dataSet.load_analysis_task(self.plot_task.parameters["warp_task"], fragment=fragment)
+        colors = self.plot_task.dataSet.dataOrganization.get_data_colors()
+        channels = self.plot_task.dataSet.dataOrganization.get_channels_for_color(colors[0])
+        zindex = self.plot_task.dataSet.get_fiducial_image(0, fragment).shape[0] // 2
+        imgs = np.array([align_task.get_aligned_fiducial(self.plot_task.dataSet.get_data_organization().get_data_channel_index(d), zindex) for d in channels])
+
+        nrows = int(np.ceil(len(channels) / 3))
+        fig, ax = plt.subplots(nrows, 2, figsize=(14.5, 7*nrows), dpi=200)
+        for i in range(nrows):
+            ind = i*3
+            inds = channels.index[ind:ind+3]
+
+            img1 = self.plot_task.dataSet.get_fiducial_image(inds[0], fragment)[zindex]
+            if len(inds) > 1:
+                img2 = self.plot_task.dataSet.get_fiducial_image(inds[1], fragment)[zindex]
+            else:
+                img2 = np.zeros_like(img1)
+            if len(inds) > 2:
+                img3 = self.plot_task.dataSet.get_fiducial_image(inds[2], fragment)[zindex]
+            else:
+                img3 = np.zeros_like(img1)
+
+            color_img1 = np.moveaxis(np.array([
+                img1 / np.percentile(img1, 99),
+                img2 / np.percentile(img2, 99),
+                img3 / np.percentile(img3, 99)
+            ]), 0, -1)
+
+            img1 = imgs[inds[0]//3]
+            if len(inds) > 1:
+                img2 = imgs[inds[1]//3]
+            else:
+                img2 = np.zeros_like(img1)
+            if len(inds) > 2:
+                img3 = imgs[inds[2]//3]
             else:
                 img3 = np.zeros_like(img1)
 

@@ -46,14 +46,14 @@ class SegmentationBoundaryPlot(AbstractPlot):
 class CellposeBoundaryPlot(AbstractPlot):
     def __init__(self, plot_task):
         super().__init__(plot_task)
-        self.set_required_tasks({"segment_task": CellposeSegment, "link_cell_task": LinkCellsInOverlaps})
+        self.set_required_tasks({"segment_task": "all", "link_cell_task": LinkCellsInOverlaps})
         self.formats = [".png"]
 
     def plot_mask(self, fov, ax) -> None:
         self.segment_task.fragment = fov
         mask = self.segment_task.load_mask()
         channel = self.dataset.get_data_organization().get_data_channel_index(self.segment_task.parameters["channel"])
-        if self.segment_task.parameters["z_pos"] is not None:
+        if "z_pos" in self.segment_task.parameters and self.segment_task.parameters["z_pos"] is not None:
             z_index = self.dataset.position_to_z_index(self.segment_task.parameters["z_pos"])
             image = self.dataset.get_raw_image(channel, fov, z_index)
         else:
@@ -115,22 +115,24 @@ class CellVolumeHistogramPlot(AbstractPlot):
 class BarcodesAssignedToCellsPlot(AbstractPlot):
     def __init__(self, plot_task) -> None:
         super().__init__(plot_task)
-        self.set_required_tasks({"partition_task": PartitionBarcodesFromMask, "segment_task": CellposeSegment})
+        self.set_required_tasks({"partition_task": PartitionBarcodesFromMask, "segment_task": "all"})
         self.formats = [".png"]
 
     def create_plot(self, **kwargs) -> plt.Figure:
         partition_task = kwargs["tasks"]["partition_task"]
         segment_task = kwargs["tasks"]["segment_task"]
-        partition_task.fragment = self.plot_task.dataSet.get_fovs()[0]
-        segment_task.fragment = self.plot_task.dataSet.get_fovs()[0]
+        fov = self.plot_task.dataSet.get_fovs()[42]
+        partition_task.fragment = fov
+        segment_task.fragment = fov
+        segment_task.parameters["downscale_xy"] = 1
         barcodes = partition_task.load_result("barcodes")
         image = segment_task.load_image(zIndex=10)
-        incells = barcodes[barcodes["cell_id"] != "000__0"]
-        outcells = barcodes[barcodes["cell_id"] == "000__0"]
+        incells = barcodes[barcodes["cell_id"] != f"{fov}__0"]
+        outcells = barcodes[barcodes["cell_id"] == f"{fov}__0"]
         fig = plt.figure(dpi=200, figsize=(10, 10))
         plt.imshow(image, cmap="gray", vmax=np.percentile(image, 99))
-        plt.scatter(incells["x"], incells["y"], s=1, alpha=0.5, c="tab:blue", marker=".")
-        plt.scatter(outcells["x"], outcells["y"], s=1, alpha=0.5, c="tab:red", marker=".")
+        plt.scatter(incells["y"], incells["x"], s=1, alpha=0.5, c="tab:blue", marker=".")
+        plt.scatter(outcells["y"], outcells["x"], s=1, alpha=0.5, c="tab:red", marker=".")
         plt.axis("off")
         return fig
 
@@ -144,8 +146,12 @@ class LinkCellsPlot(AbstractPlot):
     def create_plot(self, **kwargs) -> plt.Figure:
         link_task = kwargs["tasks"]["link_cell_task"]
 
-        links = link_task.get_links(link_task.fragment_list[0])
-        fragment1, fragment2 = link_task.fragment_list[0].split("__")
+        # Find a FOV with a reasonable number of links to show
+        for link_fragment in link_task.fragment_list:
+            links = link_task.get_links(link_fragment)
+            fragment1, fragment2 = link_fragment.split("__")
+            if len(links) > 10:
+                break
 
         # Find the orientation of the two FOVs (vertical/horizontal)
         diffs = (
@@ -157,43 +163,41 @@ class LinkCellsPlot(AbstractPlot):
             fragment1, fragment2 = fragment2, fragment1
 
         # Load the masks
-        segtask1 = link_task.dataSet.load_analysis_task("CellposeSegment", fragment=fragment1)
-        mask1 = segtask1.load_mask()
-        segtask2 = link_task.dataSet.load_analysis_task("CellposeSegment", fragment=fragment2)
-        mask2 = segtask2.load_mask()
+        segtask1 = link_task.dataSet.load_analysis_task(self.plot_task.parameters["segment_task"], fragment=fragment1)
+        mask1 = segtask1.load_result("mask")
+        segtask2 = link_task.dataSet.load_analysis_task(self.plot_task.parameters["segment_task"], fragment=fragment2)
+        mask2 = segtask2.load_result("mask")
 
         # Load the background images
-        if segtask1.parameters["z_pos"] is not None:
+        if "z_pos" in segtask1.parameters and segtask1.parameters["z_pos"] is not None:
             z_index = segtask1.dataSet.position_to_z_index(segtask1.parameters["z_pos"])
         else:
-            z_positions = segtask1.dataSet.get_z_positions()[:: segtask1.parameters["downscale_z"]]
-            z_index = segtask1.dataSet.position_to_z_index(z_positions[len(z_positions) // 2])
+            z_index = len(mask1)//2
             mask1 = mask1[z_index]
         img1 = segtask1.load_image(z_index)
 
-        if segtask2.parameters["z_pos"] is not None:
+        if "z_pos" in segtask2.parameters and segtask2.parameters["z_pos"] is not None:
             z_index = segtask2.dataSet.position_to_z_index(segtask2.parameters["z_pos"])
         else:
-            z_positions = segtask2.dataSet.get_z_positions()[:: segtask2.parameters["downscale_z"]]
-            z_index = segtask2.dataSet.position_to_z_index(z_positions[len(z_positions) // 2])
+            z_index = len(mask2)//2
             mask2 = mask2[z_index]
         img2 = segtask2.load_image(z_index)
 
         # Combine the two FOVs into one
         if axis == 1:
             segimg = np.zeros((img1.shape[0], img1.shape[0] * 2 + 100))
-            segimg[:, :img1.shape[0]] = img1
-            segimg[:, img1.shape[0] + 100:] = img2
+            segimg[:, : img1.shape[0]] = img1
+            segimg[:, img1.shape[0] + 100 :] = img2
             mask = np.zeros_like(segimg)
             mask[:, : img1.shape[0]] = mask1
-            mask[:, img1.shape[0] + 100:] = mask2
+            mask[:, img1.shape[0] + 100 :] = mask2
         else:
             segimg = np.zeros((img1.shape[0] * 2 + 100, img1.shape[0]))
             segimg[: img1.shape[0], :] = img1
-            segimg[img1.shape[0] + 100:, :] = img2
+            segimg[img1.shape[0] + 100 :, :] = img2
             mask = np.zeros_like(segimg)
             mask[: img1.shape[0], :] = mask1
-            mask[img1.shape[0] + 100:, :] = mask2
+            mask[img1.shape[0] + 100 :, :] = mask2
 
         # Get the cell centroids
         props1 = pd.DataFrame(regionprops_table(mask1, properties=["label", "centroid"]))
