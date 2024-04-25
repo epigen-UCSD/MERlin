@@ -87,12 +87,11 @@ class DataSet:
                 raise merlin.IncompatibleVersionError(
                     (
                         "Analysis was performed on dataset %s with MERlin "
-                        + "version %s, which is not compatible with the current "
-                        + "MERlin version %s"
+                        "version %s, which is not compatible with the current "
+                        "MERlin version %s"
                     )
                     % (self.experiment_name, old_metadata["version"], merlin.version())
                 )
-            # self.analysisPath = Path(oldMetadata["analysis_path"])
         except FileNotFoundError:
             new_metadata = {
                 "merlin_version": merlin.version(),
@@ -164,59 +163,14 @@ class DataSet:
         This function only checks for the png formats.
 
         Args:
-            analysisTask: the analysis task that generated this figure.
-            figureName: the name of the file to store the figure in, excluding
+            task: the analysis task that generated this figure.
+            figure_name: the name of the file to store the figure in, excluding
                     extension
             subdirectory: the name of the subdirectory within the specified
                     analysis task to save the figures.
         """
         save_path = self.get_analysis_subdirectory(task, subdirectory) / f"{figure_name}.png"
         return save_path.exists()
-
-    def get_analysis_image_set(self, task: TaskOrName, image_name: str, image_index: int = None) -> np.ndarray:
-        """Get an analysis image set saved in the analysis for this data set.
-
-        Args:
-            task: the analysis task that generated and stored the
-                image set.
-            image_name: the base name of the image
-            image_index: index of the image set to retrieve
-        """
-        return tifffile.imread(self._analysis_image_name(task, image_name, image_index))
-
-    def writer_for_analysis_images(
-        self, task: TaskOrName, image_name: str, image_index: int = None, imagej: bool = False
-    ) -> tifffile.TiffWriter:
-        """Get a writer for writing tiff files from an analysis task.
-
-        Args:
-            task:
-            image_name:
-            image_index:
-            imagej:
-        Returns:
-
-        """
-        return tifffile.TiffWriter(self._analysis_image_name(task, image_name, image_index), imagej=imagej)
-
-    @staticmethod
-    def analysis_tiff_description(slice_count: int, frame_count: int) -> Dict:
-        return {
-            "ImageJ": "1.47a\n",
-            "images": slice_count * frame_count,
-            "channels": 1,
-            "slices": slice_count,
-            "frames": frame_count,
-            "hyperstack": True,
-            "loop": False,
-        }
-
-    def _analysis_image_name(self, analysisTask: TaskOrName, imageBaseName: str, imageIndex: int) -> str:
-        destPath = self.get_analysis_subdirectory(analysisTask, subdirectory="images")
-        if imageIndex is None:
-            return destPath / (imageBaseName + ".tif")
-        else:
-            return destPath / (imageBaseName + str(imageIndex) + ".tif")
 
     def _analysis_result_save_path(
         self,
@@ -1052,7 +1006,7 @@ class MERFISHDataSet(ImageDataSet):
             overlap = imagesize * diff / fovsize
             return slice(None, math.trunc(overlap))
 
-    def _find_fov_overlaps(self):
+    def _find_fov_overlaps(self) -> None:
         positions = self.get_stage_positions()
         neighbor_graph = NearestNeighbors()
         neighbor_graph = neighbor_graph.fit(positions)
@@ -1082,25 +1036,22 @@ class MERFISHDataSet(ImageDataSet):
                     Overlap(fov, _get_x_slice(-diff["X"], get_trim=True), _get_y_slice(diff["Y"], get_trim=True)),
                 )
 
-    def get_overlap(self, overlapName):
-        return self.overlaps[overlapName]
+    def get_overlap(self, overlap_name: str) -> tuple[Overlap]:
+        return self.overlaps[overlap_name]
 
-    def get_overlap_names(self):
+    def get_overlap_names(self) -> list[str]:
+        """Get the names of all overlaps between FOVs.
+
+        Each name is a pair of FOV ids separate by a double underscore.
+        """
         return list(self.overlaps.keys())
 
-    def get_overlap_mask(self, fov, trim=False):
+    def get_overlap_mask(self, fov: str, *, trim: bool = False) -> np.ndarray:
+        """Get an image mask indicating the regions of the FOV overlapped by other FOVs."""
         mask = np.zeros(self.imageDimensions, dtype=np.uint16)
-        if trim:
-            overlapList = self.trim_overlaps
-        else:
-            overlapList = self.overlaps
-        for overlapName, overlap in overlapList.items():
-            fovs = overlapName.split("__")
-            if fovs[0] == fov:
-                overlap = overlap[0]
-            elif fovs[1] == fov:
-                overlap = overlap[1]
-            else:
-                continue
-            mask[overlap.xslice, overlap.yslice] = 1
+        overlaps = self.trim_overlaps if trim else self.overlaps
+        overlap_names = filter(lambda name: fov in name.split("__"), overlaps)
+        for name in overlap_names:
+            i = name.split("__").index(fov)
+            mask[overlaps[name][i].xslice, overlaps[name][i].yslice] = 1
         return mask

@@ -76,7 +76,7 @@ class AlignedBitImagesPlot(AbstractPlot):
         self.formats = [".png"]
 
     def create_plot(self, **kwargs) -> plt.Figure:
-        fragment = self.plot_task.dataSet.get_fovs()[100]
+        fragment = self.plot_task.dataSet.get_fovs()[1]
         align_task = self.plot_task.dataSet.load_analysis_task(self.plot_task.parameters["warp_task"], fragment=fragment)
         imgs = align_task.get_aligned_image_set(fragment)
         colors = self.plot_task.dataSet.dataOrganization.get_data_colors()
@@ -145,7 +145,7 @@ class AlignedFiducialImagesPlot(AbstractPlot):
         self.formats = [".png"]
 
     def create_plot(self, **kwargs) -> plt.Figure:
-        fragment = self.plot_task.dataSet.get_fovs()[100]
+        fragment = self.plot_task.dataSet.get_fovs()[1]
         align_task = self.plot_task.dataSet.load_analysis_task(self.plot_task.parameters["warp_task"], fragment=fragment)
         colors = self.plot_task.dataSet.dataOrganization.get_data_colors()
         channels = self.plot_task.dataSet.dataOrganization.get_channels_for_color(colors[0])

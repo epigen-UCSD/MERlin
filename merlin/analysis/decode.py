@@ -11,10 +11,7 @@ from merlin.util import barcodedb, barcodefilters, decoding
 
 
 class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
-
-    """
-    An abstract analysis class that saves barcodes into a barcode database.
-    """
+    """An abstract analysis class that saves barcodes into a barcode database."""
 
     def setup(self, *, parallel: bool, threads: int = 1) -> None:
         super().setup(parallel=parallel, threads=threads)
@@ -32,10 +29,7 @@ class BarcodeSavingParallelAnalysisTask(analysistask.AnalysisTask):
 
 
 class Decode(BarcodeSavingParallelAnalysisTask):
-
-    """
-    An analysis task that extracts barcodes from images.
-    """
+    """An analysis task that extracts barcodes from images."""
 
     def setup(self) -> None:
         super().setup(parallel=True, threads=8)
@@ -53,7 +47,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         self.set_default_parameters(
             {
                 "crop_width": 100,
-                "write_decoded_images": True,
                 "minimum_area": 0,
                 "distance_threshold": 0.5167,
                 "lowpass_sigma": 1,
@@ -146,9 +139,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
 
                 del normalizedPixelTraces
 
-        if self.parameters["write_decoded_images"]:
-            self._save_decoded_images(self.fragment, zPositionCount, decodedImages, magnitudeImages, distances)
-
         if self.parameters["remove_z_duplicated_barcodes"]:
             bcDB = self.get_barcode_database()
             bc = self._remove_z_duplicate_barcodes(bcDB.get_barcodes(fov=self.fragment))
@@ -209,25 +199,6 @@ class Decode(BarcodeSavingParallelAnalysisTask):
         )
 
         return di, pm, d
-
-    def _save_decoded_images(
-        self,
-        fov: int,
-        zPositionCount: int,
-        decodedImages: np.ndarray,
-        magnitudeImages: np.ndarray,
-        distanceImages: np.ndarray,
-    ) -> None:
-        imageDescription = self.dataSet.analysis_tiff_description(zPositionCount, 3)
-        with self.dataSet.writer_for_analysis_images(self, "decoded", fov) as outputTif:
-            for i in range(zPositionCount):
-                outputTif.save(decodedImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription)
-                outputTif.save(
-                    magnitudeImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription
-                )
-                outputTif.save(
-                    distanceImages[i].astype(np.float32), photometric="MINISBLACK", metadata=imageDescription
-                )
 
     def _remove_z_duplicate_barcodes(self, bc):
         bc = barcodefilters.remove_zplane_duplicates_all_barcodeids(

@@ -8,7 +8,6 @@ from typing import TextIO
 import snakemake
 
 import merlin
-from merlin.core import executor
 from merlin.core.dataset import MERFISHDataSet
 from merlin.util import snakewriter
 
@@ -60,6 +59,7 @@ def clean_string_arg(string: str) -> str | None:
 
 
 def get_optional_path(string: str) -> Path | None:
+    """Return a Path object or None if given string is empty."""
     string = clean_string_arg(string)
     return Path(string) if string is not None else None
 
@@ -110,7 +110,6 @@ def run_merlin() -> None:
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME
-    # e = executor.LocalExecutor(coreCount=args.core_count)
     snakefile_path = None
     if args.analysis_parameters:
         # This is run in all cases that analysis parameters are provided

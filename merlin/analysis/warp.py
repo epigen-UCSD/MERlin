@@ -1,3 +1,19 @@
+"""Tasks for correcting drift between imaging rounds.
+
+Warp
+    Abstract class used by FiducialCorrelationWarp and FiducialBeadWarp
+FiducialCorrelationWarp
+    Original drift correction method in MERlin, using phase cross correlation
+FiducialBeadWarp
+    Aligns images by finding local brightness maxima, effective with fiducial beads
+FiducialAlign
+    A more robust algorithm that can be used with fiducial beads and DAPI
+PrecomputedAlign
+    Uses drift values already computed by another pipeline used at the Center for Epigenomics
+AlignDapiFeatures
+    The most robust algorithm for aligning DAPI images. Also aligns in the z-axis.
+"""
+
 import pickle
 from functools import cached_property
 from typing import List, Tuple, Union
@@ -19,96 +35,53 @@ from merlin.util.deconvolve import deconvolve_sdeconv
 class Warp(analysistask.AnalysisTask):
     """
     An abstract class for warping a set of images so that the corresponding
-    pixels align between images taken in different imaging rounds.
+        pixels align between images taken in different imaging rounds.
     """
 
     def setup(self, *, parallel: bool) -> None:
         super().setup(parallel=parallel)
 
-        self.set_default_parameters({"write_fiducial_images": False, "write_aligned_images": False})
-
-        self.writeAlignedFiducialImages = self.parameters["write_fiducial_images"]
-
-    def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
+    def get_aligned_image_set(self, fov: int, chromatic_corrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.
 
         Args:
             fov: index of the field of view
-            chromaticCorrector: the ChromaticCorrector to use to chromatically
+            chromatic_corrector: the ChromaticCorrector to use to chromatically
                 correct the images. If not supplied, no correction is
                 performed.
+
         Returns:
             a 4-dimensional numpy array containing the aligned images. The
                 images are arranged as [channel, zIndex, x, y]
         """
-        dataChannels = self.dataSet.get_data_organization().get_data_channels()
-        zIndexes = range(len(self.dataSet.get_z_positions()))
-        return np.array(
-            [[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in zIndexes] for d in dataChannels]
-        )
+        channels = self.dataSet.get_data_organization().get_data_channels()
+        z_indexes = range(len(self.dataSet.get_z_positions()))
+        return np.array([[self.get_aligned_image(fov, d, z, chromatic_corrector) for z in z_indexes] for d in channels])
 
     def get_aligned_image(
-        self, fov: int, dataChannel: int, zIndex: int, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, fov: int, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        """Get the specified transformed image
+        """Get the specified transformed image.
 
         Args:
             fov: index of the field of view
-            dataChannel: index of the data channel
-            zIndex: index of the z position
-            chromaticCorrector: the ChromaticCorrector to use to chromatically
+            channel: index of the data channel
+            z_index: index of the z position
+            chromatic_corrector: the ChromaticCorrector to use to chromatically
                 correct the images. If not supplied, no correction is
                 performed.
+
         Returns:
             a 2-dimensional numpy array containing the specified image
         """
-        inputImage = self.dataSet.get_raw_image(dataChannel, fov, self.dataSet.z_index_to_position(zIndex))
-        transformation = self.get_transformation(dataChannel)
-        if chromaticCorrector is not None:
-            imageColor = self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
+        image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(z_index))
+        transformation = self.get_transformation(channel)
+        if chromatic_corrector is not None:
+            color = self.dataSet.get_data_organization().get_data_channel_color(channel)
             return transform.warp(
-                chromaticCorrector.transform_image(inputImage, imageColor), transformation, preserve_range=True
-            ).astype(inputImage.dtype)
-        else:
-            return transform.warp(inputImage, transformation, preserve_range=True).astype(inputImage.dtype)
-
-    def _process_transformations(self, transformationList, fov) -> None:
-        """
-        Process the transformations determined for a given fov.
-
-        The list of transformation is used to write registered images and
-        the transformation list is archived.
-
-        Args:
-            transformationList: A list of transformations that contains a
-                transformation for each data channel.
-            fov: The fov that is being transformed.
-        """
-
-        dataChannels = self.dataSet.get_data_organization().get_data_channels()
-
-        if self.parameters["write_aligned_images"]:
-            zPositions = self.dataSet.get_z_positions()
-
-            imageDescription = self.dataSet.analysis_tiff_description(len(zPositions), len(dataChannels))
-
-            with self.dataSet.writer_for_analysis_images(self, "aligned_images", fov) as outputTif:
-                for t, x in zip(transformationList, dataChannels):
-                    for z in zPositions:
-                        inputImage = self.dataSet.get_raw_image(x, fov, z)
-                        transformedImage = transform.warp(inputImage, t, preserve_range=True).astype(inputImage.dtype)
-                        outputTif.save(transformedImage, photometric="MINISBLACK", metadata=imageDescription)
-
-        if self.writeAlignedFiducialImages:
-            fiducialImageDescription = self.dataSet.analysis_tiff_description(1, len(dataChannels))
-
-            with self.dataSet.writer_for_analysis_images(self, "aligned_fiducial_images", fov) as outputTif:
-                for t, x in zip(transformationList, dataChannels):
-                    inputImage = self.dataSet.get_fiducial_image(x, fov)
-                    transformedImage = transform.warp(inputImage, t, preserve_range=True).astype(inputImage.dtype)
-                    outputTif.save(transformedImage, photometric="MINISBLACK", metadata=fiducialImageDescription)
-
-        self._save_transformations(transformationList, fov)
+                chromatic_corrector.transform_image(image, color), transformation, preserve_range=True
+            ).astype(image.dtype)
+        return transform.warp(image, transformation, preserve_range=True).astype(image.dtype)
 
     def _save_transformations(self, transformationList: List, fov: int) -> None:
         self.dataSet.save_numpy_analysis_result(
@@ -122,13 +95,13 @@ class Warp(analysistask.AnalysisTask):
     def get_transformation(
         self, fov: int, dataChannel: int = None
     ) -> Union[transform.EuclideanTransform, List[transform.EuclideanTransform]]:
-        """Get the transformations for aligning images for the specified field
-        of view.
+        """Get the transformations for aligning images for the specified field of view.
 
         Args:
             fov: the fov to get the transformations for.
             dataChannel: the index of the data channel to get the transformation
                 for. If None, then all data channels are returned.
+
         Returns:
             a EuclideanTransform if dataChannel is specified or a list of
                 EuclideanTransforms for all dataChannels if dataChannel is
@@ -141,8 +114,7 @@ class Warp(analysistask.AnalysisTask):
             return transformationMatrices[
                 self.dataSet.get_data_organization().get_imaging_round_for_channel(dataChannel) - 1
             ]
-        else:
-            return transformationMatrices
+        return transformationMatrices
 
 
 class FiducialCorrelationWarp(Warp):
@@ -173,7 +145,7 @@ class FiducialCorrelationWarp(Warp):
             for x in self.dataSet.get_data_organization().get_one_channel_per_round()
         ]
         transformations = [transform.SimilarityTransform(translation=[-x[1], -x[0]]) for x in offsets]
-        self._process_transformations(transformations, fragment)
+        self._save_transformations(transformations, fragment)
 
 
 class FiducialBeadWarp(Warp):
@@ -347,7 +319,7 @@ class FiducialBeadWarp(Warp):
                     print("No beads found, fragmentIndex", fragment, ", channel", channel, ", tile", key)
             offsets.append(np.median(Txyzs, 0))
         transformations = [transform.SimilarityTransform(translation=[-x[1], -x[0]]) for x in offsets]
-        self._process_transformations(transformations, fragment)
+        self._save_transformations(transformations, fragment)
 
 
 class FiducialAlign(analysistask.AnalysisTask):
