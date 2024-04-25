@@ -89,9 +89,11 @@ class DataOrganization:
         """
         return np.array(self.data.index)
 
-    def get_data_colors(self):
-        return self.data[~self.data["bitNumber"].isna()]["color"].unique()
-    
+    def get_data_colors(self, merfish_only=True):
+        if merfish_only:
+            return self.data[~self.data["bitNumber"].isna()]["color"].unique()
+        return self.data["color"].unique()
+
     def get_channels_for_color(self, color):
         return self.data[self.data["color"] == color]["channelName"]
 

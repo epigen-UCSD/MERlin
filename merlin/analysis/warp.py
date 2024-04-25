@@ -572,7 +572,9 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
         self.add_dependencies({"flat_field_task": []})
 
-        self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": 0})
+        rounds = self.dataSet.get_data_organization().get_one_channel_per_round()
+        reference = int(rounds[len(rounds) // 2])
+        self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": reference})
 
         self.define_results("drifts")
 
@@ -604,6 +606,49 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             return np.array([0, 0, 0])
         return drifts[imaging_round][0]
 
+    def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
+        try:
+            zdrift, _, _ = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            zdrift = 0
+        try:
+            zdrift_int = np.round(zdrift).astype(int)
+            zdrift_frac = zdrift - zdrift_int
+            input_image = self.dataSet.get_raw_image(
+                channel,
+                self.fragment,
+                self.dataSet.z_index_to_position(z_index + zdrift_int),
+            )
+            if zdrift_frac != 0:
+                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
+                input_image2 = self.dataSet.get_raw_image(
+                    channel,
+                    self.fragment,
+                    self.dataSet.z_index_to_position(z_index + z_index2),
+                )
+                return input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
+            else:
+                return input_image
+        except IndexError:  # Z drift outside bounds
+            input_image = self.dataSet.get_raw_image(channel, self.fragment, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(input_image)
+
+    def align_image(
+        self, channel: int, input_image: np.ndarray, chromatic_corrector: aberration.ChromaticCorrector = None
+    ) -> np.ndarray:
+        if chromatic_corrector is not None:
+            image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+            input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
+        try:
+            _, xdrift, ydrift = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            xdrift, ydrift = self.get_transformation(channel)
+        if self.dataSet.microscopeParameters["flip_horizontal"]:
+            xdrift = -xdrift
+        if self.dataSet.microscopeParameters["flip_vertical"]:
+            ydrift = -ydrift
+        return ndimage.shift(input_image, [xdrift, ydrift], order=0)
+
     def get_aligned_image(
         self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
@@ -627,39 +672,8 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
                     for z_index in range(len(self.dataSet.get_z_positions()))
                 ]
             )
-        try:
-            zdrift, xdrift, ydrift = self.get_transformation(channel)
-        except ValueError:  # Drift correction was not 3D
-            zdrift = 0
-            xdrift, ydrift = self.get_transformation(channel)
-        try:
-            zdrift_int = np.round(zdrift).astype(int)
-            zdrift_frac = zdrift - zdrift_int
-            input_image = self.dataSet.get_raw_image(
-                channel,
-                fov,
-                self.dataSet.z_index_to_position(z_index + zdrift_int),
-            )
-            if zdrift_frac != 0:
-                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
-                input_image2 = self.dataSet.get_raw_image(
-                    channel,
-                    fov,
-                    self.dataSet.z_index_to_position(z_index + z_index2),
-                )
-                input_image = input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
-            if chromatic_corrector is not None:
-                image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
-                input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
-        except IndexError:  # Z drift outside bounds
-            input_image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(0))
-            return np.zeros_like(input_image)
-        else:
-            if self.dataSet.microscopeParameters["flip_horizontal"]:
-                xdrift = -xdrift
-            if self.dataSet.microscopeParameters["flip_vertical"]:
-                ydrift = -ydrift
-            return ndimage.shift(input_image, [xdrift, ydrift], order=0)
+        input_image = self.get_z_aligned_frame(channel, z_index)
+        return self.align_image(channel, input_image)
 
     def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
         z, x, y = self.get_transformation(channel)
@@ -681,8 +695,8 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
     def psf(self):
         return np.load(self.parameters["psf_file"])
 
-    def preprocess_image(self, im):
-        im = self.flat_field_task.process_image(im)
+    def preprocess_image(self, im, color):
+        im = self.flat_field_task.process_image(im, color=color)
         im = deconvolve_sdeconv(im, self.psf)
         im = np.array([im_ - cv2.blur(im_, (30, 30)) for im_ in im], dtype=np.float32)
         return im / np.std(im)
@@ -792,7 +806,10 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
     def run_analysis(self) -> None:
         fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], self.fragment)
-        fixed_image = self.preprocess_image(fixed_image)
+        fixed_image = self.preprocess_image(
+            fixed_image,
+            self.dataSet.get_data_organization().data.iloc[self.parameters["reference_round"]]["fiducialColor"],
+        )
         Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image)
         Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image)
 
@@ -803,7 +820,9 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
                 drift = None
             else:
                 moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
-                moving_image = self.preprocess_image(moving_image)
+                moving_image = self.preprocess_image(
+                    moving_image, self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"]
+                )
                 Xh_plus_moving = self.get_local_maxfast_tensor(moving_image)
                 Xh_minus_moving = self.get_local_maxfast_tensor(-moving_image)
                 drift = self.calculate_translation(Xh_plus_fixed, Xh_minus_fixed, Xh_plus_moving, Xh_minus_moving)

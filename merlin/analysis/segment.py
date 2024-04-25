@@ -367,7 +367,9 @@ class CellposeSegment3D(analysistask.AnalysisTask):
     def load_image(self, zIndex):
         image = self.dataSet.get_raw_image(self.channelIndex, self.fragment, zIndex)
         if "flat_field_task" in self.dependencies:
-            image = self.flat_field_task.process_image(image)
+            image = self.flat_field_task.process_image(
+                image, self.dataSet.get_data_organization().get_data_channel_color(self.channelIndex)
+            )
         return image[:: self.parameters["downscale_xy"], :: self.parameters["downscale_xy"]]
 
     def slice_pair_to_info(self, pair):

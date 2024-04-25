@@ -92,7 +92,7 @@ class DataSet:
                     )
                     % (self.experiment_name, old_metadata["version"], merlin.version())
                 )
-            #self.analysisPath = Path(oldMetadata["analysis_path"])
+            # self.analysisPath = Path(oldMetadata["analysis_path"])
         except FileNotFoundError:
             new_metadata = {
                 "merlin_version": merlin.version(),
@@ -173,9 +173,7 @@ class DataSet:
         save_path = self.get_analysis_subdirectory(task, subdirectory) / f"{figure_name}.png"
         return save_path.exists()
 
-    def get_analysis_image_set(
-        self, task: TaskOrName, image_name: str, image_index: int = None
-    ) -> np.ndarray:
+    def get_analysis_image_set(self, task: TaskOrName, image_name: str, image_index: int = None) -> np.ndarray:
         """Get an analysis image set saved in the analysis for this data set.
 
         Args:
@@ -606,14 +604,12 @@ class DataSet:
         with saveName.open("w") as outFile:
             json.dump(analysisTask.parameters, outFile, indent=4)
 
-    def load_analysis_task(self, analysisTaskName: str, fragment: str) -> analysistask.AnalysisTask:
-        loadName = self.get_task_subdirectory(analysisTaskName) / "task.json"
-
-        with loadName.open() as inFile:
-            parameters: dict[str, str] = json.load(inFile)
-            analysisModule = importlib.import_module(parameters["module"])
-            analysisTask = getattr(analysisModule, parameters["class"])
-            return analysisTask(self, self.analysis_path, parameters, analysisTaskName, fragment)
+    def load_analysis_task(self, task_name: str, fragment: str) -> analysistask.AnalysisTask:
+        with Path(self.get_task_subdirectory(task_name), "task.json").open() as infile:
+            parameters: dict[str, str] = json.load(infile)
+            module = importlib.import_module(parameters["module"])
+            task = getattr(module, parameters["class"])
+            return task(self, self.analysis_path, parameters, task_name, fragment)
 
     def delete_analysis(self, analysisTask: TaskOrName) -> None:
         """
@@ -992,7 +988,9 @@ class MERFISHDataSet(ImageDataSet):
         # TODO - check this function
         return np.unique(self.dataOrganization.fileMap["imagingRound"])
 
-    def get_raw_image(self, dataChannel, fov, zPosition):
+    def get_raw_image(self, dataChannel, fov, zPosition=None):
+        if zPosition is None:
+            return np.array([self.get_raw_image(dataChannel, fov, zpos) for zpos in self.get_z_positions()])
         return self.load_image(
             self.dataOrganization.get_image_filename(dataChannel, fov),
             self.dataOrganization.get_image_frame_index(dataChannel, zPosition),
@@ -1066,12 +1064,12 @@ class MERFISHDataSet(ImageDataSet):
             i = positions.iloc[i].name
             for dist, fov in zip(dists, fovs):
                 fov = positions.iloc[fov].name
-                if dist == 0 or f"{i}__{fov}" in self.overlaps or f"{fov}__{i}" in self.overlaps:
+                if int(dist) == 0 or f"{i}__{fov}" in self.overlaps or f"{fov}__{i}" in self.overlaps:
                     continue
                 diff = positions.loc[i] - positions.loc[fov]
                 if self.flipVertical:
                     diff["X"] = -diff["X"]
-                if self.flipHorizontal:
+                if not self.flipHorizontal:
                     diff["Y"] = -diff["Y"]
                 _get_x_slice = functools.partial(self._get_overlap_slice, axis=0)
                 _get_y_slice = functools.partial(self._get_overlap_slice, axis=1)
