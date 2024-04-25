@@ -255,14 +255,14 @@ class PixelBasedDecoder(object):
         normalizer = sum_labels(labels, pixelMagnitudes)
         grids = np.ogrid[[slice(0, i) for i in pixelMagnitudes.shape]]
         if is3D:
-            result[:, [7, 6, 5]] = np.array(
+            result[:, [7, 5, 6]] = np.array(
                 [
                     sum_labels(labels, pixelMagnitudes * grids[dim].astype(float)) / normalizer
                     for dim in range(pixelMagnitudes.ndim)
                 ]
             ).T
         else:
-            result[:, [6, 5]] = np.array(
+            result[:, [5, 6]] = np.array(
                 [
                     sum_labels(labels, pixelMagnitudes * grids[dim].astype(float)) / normalizer
                     for dim in range(pixelMagnitudes.ndim)

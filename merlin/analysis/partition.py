@@ -131,9 +131,9 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
 
     def apply_mask(self, barcodes, mask):
         if mask.ndim == 2:
-            return mask[barcodes["y"].round().astype(int), barcodes["x"].round().astype(int)]
+            return mask[barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)]
         return mask[
-            barcodes["z"].round().astype(int), barcodes["y"].round().astype(int), barcodes["x"].round().astype(int)
+            barcodes["z"].round().astype(int), barcodes["x"].round().astype(int), barcodes["y"].round().astype(int)
         ]
 
     def assign_barcodes(self, filter_task):
