@@ -121,7 +121,7 @@ class BarcodesAssignedToCellsPlot(AbstractPlot):
     def create_plot(self, **kwargs) -> plt.Figure:
         partition_task = kwargs["tasks"]["partition_task"]
         segment_task = kwargs["tasks"]["segment_task"]
-        fov = self.plot_task.dataSet.get_fovs()[42]
+        fov = self.plot_task.dataSet.get_fovs()[1]
         partition_task.fragment = fov
         segment_task.fragment = fov
         segment_task.parameters["downscale_xy"] = 1
