@@ -754,6 +754,7 @@ class MERFISHDataSet(ImageDataSet):
         skip: list = None,
         profile: bool = False,
         analysis_suffix: str | None = None,
+        gpu_jobs: int = 2,
     ):
         """Create a MERFISH dataset for the specified raw data.
 
@@ -796,6 +797,7 @@ class MERFISHDataSet(ImageDataSet):
             self._import_positions(positionFileName)
         self._load_positions()
         self._find_fov_overlaps()
+        self.gpu_jobs = gpu_jobs
 
     def save_codebook(self, codebook: codebook.Codebook) -> None:
         """Store the specified codebook in this dataset.
@@ -1055,3 +1057,17 @@ class MERFISHDataSet(ImageDataSet):
             i = name.split("__").index(fov)
             mask[overlaps[name][i].xslice, overlaps[name][i].yslice] = 1
         return mask
+
+    def reserve_gpu(self, task) -> bool:
+        for i in range(self.gpu_jobs):
+            path = self.analysis_path / f"gpu.lock{i}"
+            if not path.exists():
+                path.write_text(task.analysis_name + task.fragment)
+                return True
+        return False
+
+    def release_gpu(self, task):
+        for i in range(self.gpu_jobs):
+            path = self.analysis_path / f"gpu.lock{i}"
+            if path.exists() and path.read_text() == task.analysis_name + task.fragment:
+                path.unlink(missing_ok=True)

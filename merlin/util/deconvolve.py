@@ -168,10 +168,8 @@ def deconvolve_lucyrichardson_guo(
     return ek
 
 
-def deconvolve_sdeconv(im, psf):
-    obj = SSettings.instance()
-    obj.device = "cpu"
-    psff = np.zeros(im.shape, dtype=np.float32)
+def prepare_psf(psf, shape):
+    psff = np.zeros(shape, dtype=np.float32)
 
     slices = [
         (
@@ -183,7 +181,35 @@ def deconvolve_sdeconv(im, psf):
     ]
     sl_psff, sl_psf_full_ = list(zip(*slices))
     psff[sl_psff] = psf[sl_psf_full_]
+    return psff
+
+
+def deconvolve_sdeconv(im, psf, device="cpu"):
+    obj = SSettings.instance()
+    obj.device = device
+    if psf.shape != im.shape:
+        psf = prepare_psf(psf, im.shape)
 
     pad = int(np.min(list(np.array(im.shape) - 1) + [50]))
-    filter_ = SWiener(torch.from_numpy(psff), beta=0.001, pad=pad)
-    return filter_(torch.from_numpy(im)).detach().numpy().astype(np.float32)
+    filter_ = SWiener(torch.from_numpy(psf).to(device), beta=0.001, pad=pad)
+    return filter_(torch.from_numpy(im).to(device)).cpu().detach().numpy().astype(np.float32)
+
+
+def deconvolve_tiles(image, psf, device="cpu", tile_size=500, pad=100):
+    im0 = np.zeros_like(image)
+    sx, sy = image.shape[1:]
+    ixys = []
+    for ix in np.arange(0, sx, tile_size):
+        for iy in np.arange(0, sy, tile_size):
+            ixys.append([ix, iy])
+
+    for ix, iy in ixys:
+        imsm = image[:, ix : ix + pad + tile_size, iy : iy + pad + tile_size]
+        imt = deconvolve_sdeconv(imsm, psf, device)
+        torch.cuda.empty_cache()
+        start_x = ix + pad // 2 if ix > 0 else 0
+        end_x = ix + pad // 2 + tile_size
+        start_y = iy + pad // 2 if iy > 0 else 0
+        end_y = iy + pad // 2 + tile_size
+        im0[:, start_x:end_x, start_y:end_y] = imt[:, (start_x - ix) : (end_x - ix), (start_y - iy) : (end_y - iy)]
+    return im0

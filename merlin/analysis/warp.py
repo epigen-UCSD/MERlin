@@ -29,7 +29,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from merlin.core import analysistask
 from merlin.util import aberration
-from merlin.util.deconvolve import deconvolve_sdeconv
+from merlin.util.deconvolve import deconvolve_tiles
 
 
 class Warp(analysistask.AnalysisTask):
@@ -669,7 +669,11 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
     def preprocess_image(self, im, color):
         im = self.flat_field_task.process_image(im, color=color)
-        im = deconvolve_sdeconv(im, self.psf)
+        gpu = self.dataSet.reserve_gpu(self)
+        device = torch.device("cuda:0" if (torch.cuda.is_available() and gpu) else "cpu")
+        self.logger.info(f"Deconvolving with {device}")
+        im = deconvolve_tiles(im, self.psf, device)
+        self.dataSet.release_gpu(self)
         im = np.array([im_ - cv2.blur(im_, (30, 30)) for im_ in im], dtype=np.float32)
         return im / np.std(im)
 
@@ -776,26 +780,24 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
         return [tzxyf, tzxy_plus, tzxy_minus, N_plus, N_minus]
 
-    def run_analysis(self) -> None:
-        fixed_image = self.dataSet.get_fiducial_image(self.parameters["reference_round"], self.fragment)
+    def get_dapi_features(self, channel):
+        fixed_image = self.dataSet.get_fiducial_image(channel, self.fragment)
         fixed_image = self.preprocess_image(
             fixed_image,
-            self.dataSet.get_data_organization().data.iloc[self.parameters["reference_round"]]["fiducialColor"],
+            self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"],
         )
         Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image)
         Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image)
+        return Xh_plus_fixed, Xh_minus_fixed
 
+    def run_analysis(self) -> None:
+        Xh_plus_fixed, Xh_minus_fixed = self.get_dapi_features(self.parameters["reference_round"])
         self.drifts = {}
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
             imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
             if imaging_round == self.parameters["reference_round"]:
                 drift = None
             else:
-                moving_image = self.dataSet.get_fiducial_image(channel, self.fragment)
-                moving_image = self.preprocess_image(
-                    moving_image, self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"]
-                )
-                Xh_plus_moving = self.get_local_maxfast_tensor(moving_image)
-                Xh_minus_moving = self.get_local_maxfast_tensor(-moving_image)
+                Xh_plus_moving, Xh_minus_moving = self.get_dapi_features(channel)
                 drift = self.calculate_translation(Xh_plus_fixed, Xh_minus_fixed, Xh_plus_moving, Xh_minus_moving)
             self.drifts[imaging_round] = drift
