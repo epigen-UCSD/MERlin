@@ -287,9 +287,9 @@ class PixelBasedDecoder(object):
 
         result = result[
             (result[:, 5] >= cropWidth)
-            & (result[:, 5] < decodedImage.shape[-2])
+            & (result[:, 5] < decodedImage.shape[-2] - cropWidth)
             & (result[:, 6] >= cropWidth)
-            & (result[:, 6] < decodedImage.shape[-1])
+            & (result[:, 6] < decodedImage.shape[-1] - cropWidth)
             & (result[:, 2] >= minimumArea)
         ]
 
