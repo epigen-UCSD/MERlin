@@ -54,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--server", help="start as a task server")
     parser.add_argument("--client", help="start as a task client")
     parser.add_argument("--gpu-jobs", type=int, help="number of jobs to allow to use the GPU in parallel")
+    parser.add_argument("--psf", help="path to the point spread function")
 
     return parser
 
@@ -117,6 +118,7 @@ def run_merlin() -> None:
         skip=args.skip,
         analysis_suffix=args.suffix,
         gpu_jobs=args.gpu_jobs,
+        psf_file=args.psf
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME

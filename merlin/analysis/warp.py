@@ -665,7 +665,7 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
     @cached_property
     def psf(self):
-        return np.load(self.parameters["psf_file"])
+        return self.dataSet.load_psf()
 
     def preprocess_image(self, im, color, device):
         im = self.flat_field_task.process_image(im, color=color)

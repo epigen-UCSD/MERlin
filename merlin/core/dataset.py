@@ -756,6 +756,7 @@ class MERFISHDataSet(ImageDataSet):
         profile: bool = False,
         analysis_suffix: str | None = None,
         gpu_jobs: int = 2,
+        psf_file: str = None,
     ):
         """Create a MERFISH dataset for the specified raw data.
 
@@ -796,6 +797,11 @@ class MERFISHDataSet(ImageDataSet):
 
         if positionFileName is not None:
             self._import_positions(positionFileName)
+
+        if psf_file is not None:
+            psf = np.load(psf_file)
+            np.save(self.analysis_path / "psf.npy", psf)
+
         self._load_positions()
         self._find_fov_overlaps()
         self.gpu_jobs = gpu_jobs
@@ -1072,3 +1078,6 @@ class MERFISHDataSet(ImageDataSet):
             path = self.analysis_path / f"gpu.{socket.gethostname()}.lock{i}"
             if path.exists() and path.read_text() == task.analysis_name + task.fragment:
                 path.unlink(missing_ok=True)
+
+    def load_psf(self):
+        return np.load(self.analysis_path / "psf.npy")
