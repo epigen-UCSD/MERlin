@@ -619,7 +619,7 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             xdrift = -xdrift
         if self.dataSet.microscopeParameters["flip_vertical"]:
             ydrift = -ydrift
-        return ndimage.shift(input_image, [xdrift, ydrift], order=0)
+        return ndimage.shift(input_image, [xdrift, ydrift], order=1)
 
     def get_aligned_image(
         self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
@@ -667,18 +667,14 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
     def psf(self):
         return np.load(self.parameters["psf_file"])
 
-    def preprocess_image(self, im, color):
+    def preprocess_image(self, im, color, device):
         im = self.flat_field_task.process_image(im, color=color)
-        gpu = self.dataSet.reserve_gpu(self)
-        device = torch.device("cuda:0" if (torch.cuda.is_available() and gpu) else "cpu")
-        self.logger.info(f"Deconvolving with {device}")
         im = deconvolve_tiles(im, self.psf, device)
-        self.dataSet.release_gpu(self)
         im = np.array([im_ - cv2.blur(im_, (30, 30)) for im_ in im], dtype=np.float32)
         return im / np.std(im)
 
-    def get_local_maxfast_tensor(self, im):
-        im_dif = torch.from_numpy(im)
+    def get_local_maxfast_tensor(self, im, device):
+        im_dif = torch.from_numpy(im).to(device)
         z, x, y = torch.where(im_dif > self.parameters["th_fit"])
         zmax, xmax, ymax = im_dif.shape
 
@@ -709,9 +705,9 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             d1, d2, d3 = np.indices([2 * delta_fit + 1] * 3).reshape([3, -1]) - delta_fit
             kp = (d1 * d1 + d2 * d2 + d3 * d3) <= (delta_fit * delta_fit)
             d1, d2, d3 = d1[kp], d2[kp], d3[kp]
-            d1 = torch.from_numpy(d1)
-            d2 = torch.from_numpy(d2)
-            d3 = torch.from_numpy(d3)
+            d1 = torch.from_numpy(d1).to(device)
+            d2 = torch.from_numpy(d2).to(device)
+            d3 = torch.from_numpy(d3).to(device)
             im_centers0 = (z.reshape(-1, 1) + d1).T
             im_centers1 = (x.reshape(-1, 1) + d2).T
             im_centers2 = (y.reshape(-1, 1) + d3).T
@@ -782,12 +778,16 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
 
     def get_dapi_features(self, channel):
         fixed_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+        gpu = self.dataSet.reserve_gpu(self)
+        device = torch.device("cuda:0" if (torch.cuda.is_available() and gpu) else "cpu")
         fixed_image = self.preprocess_image(
             fixed_image,
             self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"],
+            device
         )
-        Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image)
-        Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image)
+        Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image, device)
+        Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image, device)
+        self.dataSet.release_gpu(self)
         return Xh_plus_fixed, Xh_minus_fixed
 
     def run_analysis(self) -> None:
