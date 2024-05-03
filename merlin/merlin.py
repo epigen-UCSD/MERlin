@@ -1,4 +1,5 @@
 """Main entry point for the MERlin pipeline."""
+
 import argparse
 import json
 import sys
@@ -8,6 +9,7 @@ from typing import TextIO
 import snakemake
 
 import merlin
+from merlin import client, server
 from merlin.core.dataset import MERFISHDataSet
 from merlin.util import snakewriter
 
@@ -49,6 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip", nargs="+", help="list of FOV names to omit from processing")
     parser.add_argument("--profile", action="store_true", help="profile tasks and dump to logs")
     parser.add_argument("--suffix", help="Suffix to add to the analysis output directory name")
+    parser.add_argument("--server", help="start as a task server")
+    parser.add_argument("--client", help="start as a task client")
+    parser.add_argument("--gpu-jobs", type=int, help="number of jobs to allow to use the GPU in parallel")
 
     return parser
 
@@ -95,6 +100,10 @@ def run_merlin() -> None:
         configure_environment()
         return
 
+    if args.client:
+        client.client(args)
+        return
+
     dataset = MERFISHDataSet(
         args.dataset,
         dataOrganizationName=get_optional_path(args.data_organization),
@@ -106,7 +115,8 @@ def run_merlin() -> None:
         fovList=get_optional_path(args.fovs),
         profile=args.profile,
         skip=args.skip,
-        analysis_suffix=args.suffix
+        analysis_suffix=args.suffix,
+        gpu_jobs=args.gpu_jobs,
     )
 
     parameters_home = merlin.ANALYSIS_PARAMETERS_HOME
@@ -115,7 +125,7 @@ def run_merlin() -> None:
         # This is run in all cases that analysis parameters are provided
         # so that new analysis tasks are generated to match the new parameters
         with Path(parameters_home, args.analysis_parameters).open() as f:
-            snakefile_path = generate_analysis_tasks_and_snakefile(dataset, f)
+            snakefile_path = generate_analysis_tasks_and_snakefile(dataset, f, args.gpu_jobs)
 
     if not args.generate_only:
         if args.analysis_task:
@@ -134,16 +144,20 @@ def run_merlin() -> None:
             if args.snakemake_parameters:
                 with Path(merlin.SNAKEMAKE_PARAMETERS_HOME, args.snakemake_parameters).open() as f:
                     snakemake_parameters = json.load(f)
+            if args.server:
+                with Path(parameters_home, args.analysis_parameters).open() as f:
+                    analysis_parameters = json.load(f)
+                server.start_server(dataset, analysis_parameters, args)
+            else:
+                run_with_snakemake(dataset, snakefile_path, args.core_count, snakemake_parameters)
 
-            run_with_snakemake(dataset, snakefile_path, args.core_count, snakemake_parameters)
 
-
-def generate_analysis_tasks_and_snakefile(dataset: MERFISHDataSet, parameters_file: TextIO) -> str:
+def generate_analysis_tasks_and_snakefile(dataset: MERFISHDataSet, parameters_file: TextIO, gpu_jobs: int = 0) -> str:
     """Create the snakemake workflow file for the given dataset and parameters."""
     print(f"Generating analysis tasks from {parameters_file.name}")
     analysis_parameters = json.load(parameters_file)
     generator = snakewriter.SnakefileGenerator(analysis_parameters, dataset, sys.executable)
-    snakefile_path = generator.generate_workflow()
+    snakefile_path = generator.generate_workflow(gpu_jobs)
     print(f"Snakefile generated at {snakefile_path}")
     return snakefile_path
 

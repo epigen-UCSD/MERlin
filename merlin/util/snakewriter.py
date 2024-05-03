@@ -70,7 +70,9 @@ def generate_message(task: analysistask.AnalysisTask, *, finalize: bool = False)
     return message
 
 
-def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *, finalize: bool = False) -> str:
+def generate_shell_command(
+    task: analysistask.AnalysisTask, python_path: str, gpu_jobs: int = None, *, finalize: bool = False
+) -> str:
     """Generate the shell command for a task."""
     args = [
         python_path,
@@ -79,6 +81,9 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *,
         f"-e {task.dataSet.data_root}",
         f"-s {task.dataSet.analysis_root}",
     ]
+    if gpu_jobs is None:
+        gpu_jobs = 0
+    args.append(f"--gpu-jobs {gpu_jobs}")
     if task.dataSet.profile:
         args.append("--profile")
     if task.is_parallel() and not finalize:
@@ -89,7 +94,7 @@ def generate_shell_command(task: analysistask.AnalysisTask, python_path: str, *,
     return " ".join(args)
 
 
-def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python") -> str:
+def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python", gpu_jobs: int = None) -> str:
     """Generate the snakemake rule for a task."""
     lines = [
         f"rule {task.analysis_name}:",
@@ -97,7 +102,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python")
         f"  output: {generate_output(task)}",
         f"  message: '{generate_message(task)}'",
         f"  threads: {task.threads}",
-        f"  shell: '{generate_shell_command(task, python_path)}'",
+        f"  shell: '{generate_shell_command(task, python_path, gpu_jobs)}'",
     ]
     if task.has_finalize_step():
         lines.extend(
@@ -107,7 +112,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python")
                 f"  input: {generate_input(task, finalize=True)}",
                 f"  output: {generate_output(task, finalize=True)}",
                 f"  message: '{generate_message(task, finalize=True)}'",
-                f"  shell: '{generate_shell_command(task, python_path, finalize=True)}'",
+                f"  shell: '{generate_shell_command(task, python_path, gpu_jobs, finalize=True)}'",
             ]
         )
     return "\n".join(lines)
@@ -161,7 +166,7 @@ class SnakefileGenerator:
         terminal = list(all_tasks - seen)
         return [x.replace("_Finalize", "") if x.endswith("_Finalize") else x for x in terminal]
 
-    def generate_workflow(self) -> str:
+    def generate_workflow(self, gpu_jobs=None) -> str:
         """Generate a snakemake workflow for the analysis parameters.
 
         Returns
@@ -171,7 +176,7 @@ class SnakefileGenerator:
         terminal_tasks = self.identify_terminal_tasks(self.tasks)
         terminal_input = ",".join([generate_output(self.tasks[x], finalize=True) for x in terminal_tasks])
         terminal_rule = f"rule all:\n  input: {terminal_input}".strip()
-        task_rules = [snakemake_rule(x, self.python_path) for x in self.tasks.values()]
+        task_rules = [snakemake_rule(x, self.python_path, gpu_jobs) for x in self.tasks.values()]
         snakemake_string = "\n\n".join([textwrap.dedent(terminal_rule).strip()] + task_rules)
 
         return self.dataset.save_workflow(snakemake_string)

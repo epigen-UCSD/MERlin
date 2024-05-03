@@ -7,6 +7,7 @@ import math
 import os
 import pickle
 import shutil
+import socket
 from collections import namedtuple
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -1060,7 +1061,7 @@ class MERFISHDataSet(ImageDataSet):
 
     def reserve_gpu(self, task) -> bool:
         for i in range(self.gpu_jobs):
-            path = self.analysis_path / f"gpu.lock{i}"
+            path = self.analysis_path / f"gpu.{socket.gethostname()}.lock{i}"
             if not path.exists():
                 path.write_text(task.analysis_name + task.fragment)
                 return True
@@ -1068,6 +1069,6 @@ class MERFISHDataSet(ImageDataSet):
 
     def release_gpu(self, task):
         for i in range(self.gpu_jobs):
-            path = self.analysis_path / f"gpu.lock{i}"
+            path = self.analysis_path / f"gpu.{socket.gethostname()}.lock{i}"
             if path.exists() and path.read_text() == task.analysis_name + task.fragment:
                 path.unlink(missing_ok=True)
