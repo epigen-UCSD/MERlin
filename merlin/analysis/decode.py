@@ -32,7 +32,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     """An analysis task that extracts barcodes from images."""
 
     def setup(self) -> None:
-        super().setup(parallel=True, threads=8)
+        super().setup(parallel=True, threads=16)
 
         self.add_dependencies(
             {

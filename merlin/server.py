@@ -1,3 +1,16 @@
+"""Server for distributing MERlin jobs.
+
+MERlin can be started in server mode using the parameter `--server {hostname}:{port}`. The MERlin
+command should also include all the normal parameters for running the original snakemake mode.
+Once the server is started, MERlin can be run in client mode on the same machine and/or other
+machines that have access to the same filesystem (e.g. an NAS) where the imaging data and analysis
+results are stored. The clients can be started with minimal parameters. They should have the
+parameter `--client {hostname}:{port}` where `hostname` and `port` match the parameter used to
+start the server. They should also specify the number of cores that should be used (`-n`) and the
+number of jobs that can use the GPU simultaneously (`--gpu-jobs`). MERlin requires a `dataset`
+parameter, however it is not used by the client as it will run jobs relevant to the dataset that
+was given when starting the server.
+"""
 import curses
 import datetime
 import multiprocessing
@@ -14,6 +27,7 @@ class JobGroup:
         self.threads = task.threads
         self.completed = 0
         self.jobs = {}
+        self.finalize_job = None
         if task.is_parallel():
             for fragment in task.fragment_list:
                 task.fragment = fragment
@@ -40,10 +54,15 @@ class JobGroup:
             if name not in self.in_progress:
                 self.in_progress.add(name)
                 return name, command, self.threads
+        if self.finalize_job:
+            finalize_name = f"{self.name} Finalize"
+            if finalize_name not in self.in_progress and not self.in_progress:
+                self.in_progress.add(finalize_name)
+                return finalize_name, self.finalize_job, self.threads
         return None
 
     def is_complete(self):
-        return len(self.jobs) == 0
+        return len(self.jobs) == 0 and not self.finalize_job
 
     @property
     def remaining(self):
@@ -51,7 +70,10 @@ class JobGroup:
 
     def finish(self, jobname):
         self.in_progress.remove(jobname)
-        del self.jobs[jobname]
+        if "Finalize" in jobname:
+            self.finalize_job = None
+        else:
+            del self.jobs[jobname]
         self.completed += 1
 
 
