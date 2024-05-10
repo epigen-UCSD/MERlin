@@ -195,6 +195,7 @@ class PixelBasedDecoder(object):
         zIndex: int = None,
         globalAligner=None,
         minimumArea: int = 0,
+        quick_mode: bool = False,
     ):
         """Extract the barcode information from the decoded image for barcodes
         that were decoded to the specified barcode index.
@@ -222,13 +223,16 @@ class PixelBasedDecoder(object):
             a pandas dataframe containing all the barcodes decoded with the
                 specified barcode index
         """
-        is3D = len(pixelTraces.shape) == 4
+        is3D = len(decodedImage.shape) == 3
         if is3D:
             labels, nlabels, barcode_index = label_image_3d(decodedImage)
         else:
             labels, nlabels, barcode_index = label_image_2d(decodedImage)
 
-        nbits = pixelTraces.shape[1] if is3D else pixelTraces.shape[0]
+        if pixelTraces is not None:
+            nbits = pixelTraces.shape[1] if is3D else pixelTraces.shape[0]
+        else:
+            nbits = 0
 
         if nlabels == 0:
             return np.array([], dtype=np.float32).reshape((0, 12 + nbits))
@@ -277,11 +281,12 @@ class PixelBasedDecoder(object):
             result[:, [8, 9, 10]] = result[:, [5, 6, 7]]
 
         # Per-bit intensity
-        for i, bit in enumerate(range(nbits), start=11):
-            if is3D:
-                result[:, i] = sum_labels(labels, pixelTraces[:, bit, :, :]) / result[:, 2]
-            else:
-                result[:, i] = sum_labels(labels, pixelTraces[bit, :, :]) / result[:, 2]
+        if not quick_mode:
+            for i, bit in enumerate(range(nbits), start=11):
+                if is3D:
+                    result[:, i] = sum_labels(labels, pixelTraces[:, bit, :, :]) / result[:, 2]
+                else:
+                    result[:, i] = sum_labels(labels, pixelTraces[bit, :, :]) / result[:, 2]
 
         result[:, -1] = barcode_index
 

@@ -97,47 +97,34 @@ class Decode(BarcodeSavingParallelAnalysisTask):
                 distances[zIndex, :, :] = d
 
         else:
-            with tempfile.TemporaryDirectory() as tempDirectory:
-                if self.parameters["memory_map"]:
-                    normalizedPixelTraces = np.memmap(
-                        os.path.join(tempDirectory, "pixel_traces.dat"),
-                        mode="w+",
-                        dtype=np.float32,
-                        shape=(zPositionCount, bitCount, *imageShape),
-                    )
-                else:
-                    normalizedPixelTraces = np.zeros((zPositionCount, bitCount, *imageShape), dtype=np.float32)
+            for zIndex in range(zPositionCount):
+                imageSet = self.preprocess_task.get_processed_image_set(self.fragment, zIndex, chromaticCorrector)
+                imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
-                for zIndex in range(zPositionCount):
-                    imageSet = self.preprocess_task.get_processed_image_set(self.fragment, zIndex, chromaticCorrector)
-                    imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
-
-                    di, pm, npt, d = decoder.decode_pixels(
-                        imageSet,
-                        scaleFactors,
-                        backgrounds,
-                        lowPassSigma=lowPassSigma,
-                        distanceThreshold=self.parameters["distance_threshold"],
-                    )
-
-                    normalizedPixelTraces[zIndex, :, :, :] = npt
-                    decodedImages[zIndex, :, :] = di
-                    magnitudeImages[zIndex, :, :] = pm
-                    distances[zIndex, :, :] = d
-
-                self.barcodes = decoder.extract_all_barcodes(
-                    decodedImages,
-                    magnitudeImages,
-                    normalizedPixelTraces,
-                    distances,
-                    self.fragment,
-                    self.cropWidth,
-                    zIndex,
-                    self.global_align_task,
-                    self.parameters["minimum_area"],
+                di, pm, _, d = decoder.decode_pixels(
+                    imageSet,
+                    scaleFactors,
+                    backgrounds,
+                    lowPassSigma=lowPassSigma,
+                    distanceThreshold=self.parameters["distance_threshold"],
                 )
 
-                del normalizedPixelTraces
+                decodedImages[zIndex, :, :] = di
+                magnitudeImages[zIndex, :, :] = pm
+                distances[zIndex, :, :] = d
+
+            self.barcodes = decoder.extract_all_barcodes(
+                decodedImages,
+                magnitudeImages,
+                None,
+                distances,
+                self.fragment,
+                self.cropWidth,
+                zIndex,
+                self.global_align_task,
+                self.parameters["minimum_area"],
+                quick_mode=True
+            )
 
         if self.parameters["remove_z_duplicated_barcodes"]:
             bcDB = self.get_barcode_database()
