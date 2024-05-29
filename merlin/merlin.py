@@ -102,7 +102,7 @@ def run_merlin() -> None:
         return
 
     if args.client:
-        client.client(args)
+        client.Client(args).run()
         return
 
     dataset = MERFISHDataSet(
