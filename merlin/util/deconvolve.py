@@ -191,7 +191,7 @@ def deconvolve_sdeconv(im, psf, device="cpu"):
         psf = prepare_psf(psf, im.shape)
 
     pad = int(np.min(list(np.array(im.shape) - 1) + [50]))
-    filter_ = SWiener(torch.from_numpy(psf).to(device), beta=0.001, pad=pad)
+    filter_ = SWiener(torch.from_numpy(psf).to(device), beta=0.005, pad=pad)
     return filter_(torch.from_numpy(im).to(device)).cpu().detach().numpy().astype(np.float32)
 
 
