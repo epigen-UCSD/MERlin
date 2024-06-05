@@ -322,14 +322,7 @@ class FiducialBeadWarp(Warp):
         self._save_transformations(transformations, fragment)
 
 
-class FiducialAlign(analysistask.AnalysisTask):
-    def setup(self) -> None:
-        super().setup(parallel=True)
-
-        self.set_default_parameters({"sz_norm": 20, "sz": 500, "nelems": 7, "reference_round": 0})
-
-        self.define_results("drifts", "tile_drifts")
-
+class Warp3D(analysistask.AnalysisTask):
     def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.
 
@@ -339,7 +332,7 @@ class FiducialAlign(analysistask.AnalysisTask):
                 correct the images. If not supplied, no correction is
                 performed.
 
-        Returns
+        Returns:
             a 4-dimensional numpy array containing the aligned images. The
                 images are arranged as [channel, zIndex, x, y]
 
@@ -348,8 +341,47 @@ class FiducialAlign(analysistask.AnalysisTask):
         z_indexes = range(len(self.dataSet.get_z_positions()))
         return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
 
+    def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
+        try:
+            zdrift, _, _ = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            zdrift = 0
+        try:
+            zdrift_int = np.round(zdrift).astype(int)
+            zdrift_frac = zdrift - zdrift_int
+            input_image = self.dataSet.get_raw_image(
+                channel,
+                self.fragment,
+                self.dataSet.z_index_to_position(z_index + zdrift_int),
+            )
+            if zdrift_frac != 0:
+                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
+                input_image2 = self.dataSet.get_raw_image(
+                    channel,
+                    self.fragment,
+                    self.dataSet.z_index_to_position(z_index + z_index2),
+                )
+                return input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
+            else:
+                return input_image
+        except IndexError:  # Z drift outside bounds
+            input_image = self.dataSet.get_raw_image(channel, self.fragment, self.dataSet.z_index_to_position(0))
+            return np.zeros_like(input_image)
+
+    def align_image(
+        self, channel: int, input_image: np.ndarray, chromatic_corrector: aberration.ChromaticCorrector = None
+    ) -> np.ndarray:
+        if chromatic_corrector is not None:
+            image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+            input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
+        try:
+            _, xdrift, ydrift = self.get_transformation(channel)
+        except ValueError:  # Drift correction was not 3D
+            xdrift, ydrift = self.get_transformation(channel)
+        return ndimage.shift(input_image, [xdrift, ydrift], order=1)
+
     def get_aligned_image(
-        self, fov: str, channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
+        self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
         """Get the specified transformed image.
 
@@ -361,28 +393,39 @@ class FiducialAlign(analysistask.AnalysisTask):
                 correct the images. If not supplied, no correction is
                 performed.
 
-        Returns
+        Returns:
             a 2-dimensional numpy array containing the specified image
         """
-        try:
-            zdrift, xdrift, ydrift = self.get_transformation(channel)
-        except ValueError:  # Drift correction was not 3D
-            zdrift = 0
-            xdrift, ydrift = self.get_transformation(channel)
-        try:
-            input_image = self.dataSet.get_raw_image(
-                channel,
-                fov,
-                self.dataSet.z_index_to_position(z_index - zdrift),
+        if z_index is None:
+            return np.array(
+                [
+                    self.get_aligned_image(fov, channel, z_index, chromatic_corrector)
+                    for z_index in range(len(self.dataSet.get_z_positions()))
+                ]
             )
-            if chromatic_corrector is not None:
-                image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
-                input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
-        except IndexError:  # Z drift outside bounds
-            input_image = self.dataSet.get_raw_image(channel, fov, self.dataSet.z_index_to_position(0))
-            return np.zeros_like(input_image)
-        else:
-            return ndimage.shift(input_image, [-xdrift, -ydrift], order=0)
+        input_image = self.get_z_aligned_frame(channel, z_index)
+        return self.align_image(channel, input_image)
+
+    def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
+        z, x, y = self.get_transformation(channel)
+        zdrift_int = np.round(z).astype(int)
+        zdrift_frac = z - zdrift_int
+        input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+        img = input_image[z_index + zdrift_int]
+        if zdrift_frac != 0:
+            z_index2 = zdrift_int + 1 if zdrift_int > 0 else zdrift_int - 1
+            img2 = input_image[z_index + z_index2]
+            img = img * (1 - abs(zdrift_frac)) + img2 * abs(zdrift_frac)
+        return ndimage.shift(img, [x, y], order=1)
+
+
+class FiducialAlign(Warp3D):
+    def setup(self) -> None:
+        super().setup(parallel=True)
+
+        self.set_default_parameters({"sz_norm": 20, "sz": 500, "nelems": 7, "reference_round": 0})
+
+        self.define_results("drifts", "tile_drifts")
 
     def get_transformation(self, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
@@ -419,8 +462,8 @@ class FiducialAlign(analysistask.AnalysisTask):
             else:
                 im_cor = fftconvolve(im0[::-1, ::-1], im1, mode="full")
             txyz = np.unravel_index(np.argmax(im_cor), im_cor.shape) - np.array(im0.shape) + 1
-            txyzs.append(txyz)
-        txyz = np.median(txyzs, 0).astype(int)
+            txyzs.append(-txyz)
+        txyz = np.median(txyzs, 0)
         return txyz, txyzs
 
     def run_analysis(self) -> None:
@@ -538,7 +581,7 @@ class PrecomputedAlign(analysistask.AnalysisTask):
         return ndimage.shift(input_image[z_index], [-x, y], order=0)
 
 
-class AlignDapiFeatures(analysistask.AnalysisTask):
+class AlignDapiFeatures(Warp3D):
     def setup(self) -> None:
         super().setup(parallel=True, threads=16)
 
@@ -548,25 +591,25 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
         reference = int(rounds[len(rounds) // 2])
         self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": reference})
 
-        self.define_results("drifts")
+        self.define_results("drifts", "dapi_features")
 
-    def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
-        """Get the set of transformed images for the specified fov.
+    # def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
+    #     """Get the set of transformed images for the specified fov.
 
-        Args:
-            fov: index of the field of view
-            chromaticCorrector: the ChromaticCorrector to use to chromatically
-                correct the images. If not supplied, no correction is
-                performed.
+    #     Args:
+    #         fov: index of the field of view
+    #         chromaticCorrector: the ChromaticCorrector to use to chromatically
+    #             correct the images. If not supplied, no correction is
+    #             performed.
 
-        Returns:
-            a 4-dimensional numpy array containing the aligned images. The
-                images are arranged as [channel, zIndex, x, y]
+    #     Returns:
+    #         a 4-dimensional numpy array containing the aligned images. The
+    #             images are arranged as [channel, zIndex, x, y]
 
-        """
-        channels = self.dataSet.get_data_organization().get_data_channels()
-        z_indexes = range(len(self.dataSet.get_z_positions()))
-        return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
+    #     """
+    #     channels = self.dataSet.get_data_organization().get_data_channels()
+    #     z_indexes = range(len(self.dataSet.get_z_positions()))
+    #     return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
 
     def get_transformation(self, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
@@ -578,90 +621,90 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
             return np.array([0, 0, 0])
         return drifts[imaging_round][0]
 
-    def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
-        try:
-            zdrift, _, _ = self.get_transformation(channel)
-        except ValueError:  # Drift correction was not 3D
-            zdrift = 0
-        try:
-            zdrift_int = np.round(zdrift).astype(int)
-            zdrift_frac = zdrift - zdrift_int
-            input_image = self.dataSet.get_raw_image(
-                channel,
-                self.fragment,
-                self.dataSet.z_index_to_position(z_index + zdrift_int),
-            )
-            if zdrift_frac != 0:
-                z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
-                input_image2 = self.dataSet.get_raw_image(
-                    channel,
-                    self.fragment,
-                    self.dataSet.z_index_to_position(z_index + z_index2),
-                )
-                return input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
-            else:
-                return input_image
-        except IndexError:  # Z drift outside bounds
-            input_image = self.dataSet.get_raw_image(channel, self.fragment, self.dataSet.z_index_to_position(0))
-            return np.zeros_like(input_image)
+    # def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
+    #     try:
+    #         zdrift, _, _ = self.get_transformation(channel)
+    #     except ValueError:  # Drift correction was not 3D
+    #         zdrift = 0
+    #     try:
+    #         zdrift_int = np.round(zdrift).astype(int)
+    #         zdrift_frac = zdrift - zdrift_int
+    #         input_image = self.dataSet.get_raw_image(
+    #             channel,
+    #             self.fragment,
+    #             self.dataSet.z_index_to_position(z_index + zdrift_int),
+    #         )
+    #         if zdrift_frac != 0:
+    #             z_index2 = zdrift_int + 1 if zdrift_frac > 0 else zdrift_int - 1
+    #             input_image2 = self.dataSet.get_raw_image(
+    #                 channel,
+    #                 self.fragment,
+    #                 self.dataSet.z_index_to_position(z_index + z_index2),
+    #             )
+    #             return input_image * (1 - abs(zdrift_frac)) + input_image2 * abs(zdrift_frac)
+    #         else:
+    #             return input_image
+    #     except IndexError:  # Z drift outside bounds
+    #         input_image = self.dataSet.get_raw_image(channel, self.fragment, self.dataSet.z_index_to_position(0))
+    #         return np.zeros_like(input_image)
 
-    def align_image(
-        self, channel: int, input_image: np.ndarray, chromatic_corrector: aberration.ChromaticCorrector = None
-    ) -> np.ndarray:
-        if chromatic_corrector is not None:
-            image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
-            input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
-        try:
-            _, xdrift, ydrift = self.get_transformation(channel)
-        except ValueError:  # Drift correction was not 3D
-            xdrift, ydrift = self.get_transformation(channel)
-        if self.dataSet.microscopeParameters["flip_horizontal"]:
-            xdrift = -xdrift
-        if self.dataSet.microscopeParameters["flip_vertical"]:
-            ydrift = -ydrift
-        return ndimage.shift(input_image, [xdrift, ydrift], order=1)
+    # def align_image(
+    #     self, channel: int, input_image: np.ndarray, chromatic_corrector: aberration.ChromaticCorrector = None
+    # ) -> np.ndarray:
+    #     if chromatic_corrector is not None:
+    #         image_color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+    #         input_image = chromatic_corrector.transform_image(input_image, image_color).astype(input_image.dtype)
+    #     try:
+    #         _, xdrift, ydrift = self.get_transformation(channel)
+    #     except ValueError:  # Drift correction was not 3D
+    #         xdrift, ydrift = self.get_transformation(channel)
+    #     #if self.dataSet.microscopeParameters["flip_horizontal"]:
+    #     #    xdrift = -xdrift
+    #     #if self.dataSet.microscopeParameters["flip_vertical"]:
+    #     #    ydrift = -ydrift
+    #     return ndimage.shift(input_image, [-xdrift, -ydrift], order=1)
 
-    def get_aligned_image(
-        self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
-    ) -> np.ndarray:
-        """Get the specified transformed image.
+    # def get_aligned_image(
+    #     self, fov: str, channel: int, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
+    # ) -> np.ndarray:
+    #     """Get the specified transformed image.
 
-        Args:
-            fov: index of the field of view
-            dataChannel: index of the data channel
-            zIndex: index of the z position
-            chromaticCorrector: the ChromaticCorrector to use to chromatically
-                correct the images. If not supplied, no correction is
-                performed.
+    #     Args:
+    #         fov: index of the field of view
+    #         dataChannel: index of the data channel
+    #         zIndex: index of the z position
+    #         chromaticCorrector: the ChromaticCorrector to use to chromatically
+    #             correct the images. If not supplied, no correction is
+    #             performed.
 
-        Returns:
-            a 2-dimensional numpy array containing the specified image
-        """
-        if z_index is None:
-            return np.array(
-                [
-                    self.get_aligned_image(fov, channel, z_index, chromatic_corrector)
-                    for z_index in range(len(self.dataSet.get_z_positions()))
-                ]
-            )
-        input_image = self.get_z_aligned_frame(channel, z_index)
-        return self.align_image(channel, input_image)
+    #     Returns:
+    #         a 2-dimensional numpy array containing the specified image
+    #     """
+    #     if z_index is None:
+    #         return np.array(
+    #             [
+    #                 self.get_aligned_image(fov, channel, z_index, chromatic_corrector)
+    #                 for z_index in range(len(self.dataSet.get_z_positions()))
+    #             ]
+    #         )
+    #     input_image = self.get_z_aligned_frame(channel, z_index)
+    #     return self.align_image(channel, input_image)
 
-    def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
-        z, x, y = self.get_transformation(channel)
-        zdrift_int = np.round(z).astype(int)
-        zdrift_frac = z - zdrift_int
-        input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
-        img = input_image[z_index + zdrift_int]
-        if zdrift_frac != 0:
-            z_index2 = zdrift_int + 1 if zdrift_int > 0 else zdrift_int - 1
-            img2 = input_image[z_index + z_index2]
-            img = img * (1 - abs(zdrift_frac)) + img2 * abs(zdrift_frac)
-        if self.dataSet.microscopeParameters["flip_horizontal"]:
-            x = -x
-        if self.dataSet.microscopeParameters["flip_vertical"]:
-            y = -y
-        return ndimage.shift(img, [x, y], order=0)
+    # def get_aligned_fiducial(self, channel: int, z_index: int) -> np.ndarray:
+    #     z, x, y = self.get_transformation(channel)
+    #     zdrift_int = np.round(z).astype(int)
+    #     zdrift_frac = z - zdrift_int
+    #     input_image = self.dataSet.get_fiducial_image(channel, self.fragment)
+    #     img = input_image[z_index + zdrift_int]
+    #     if zdrift_frac != 0:
+    #         z_index2 = zdrift_int + 1 if zdrift_int > 0 else zdrift_int - 1
+    #         img2 = input_image[z_index + z_index2]
+    #         img = img * (1 - abs(zdrift_frac)) + img2 * abs(zdrift_frac)
+    #     #if self.dataSet.microscopeParameters["flip_horizontal"]:
+    #     #    x = -x
+    #     #if self.dataSet.microscopeParameters["flip_vertical"]:
+    #     #    y = -y
+    #     return ndimage.shift(img, [-x, -y], order=1)
 
     @cached_property
     def psf(self):
@@ -758,21 +801,21 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
         tzxy, Npts = self.get_Xtzxy(X, X_ref, tzxy, resc=resc, learn=learn)
         return tzxy, Npts
 
-    def calculate_translation(self, Xh_plus1, Xh_minus1, Xh_plus2, Xh_minus2, resc=5):
+    def calculate_translation(self, Xh_plus1, Xh_minus1, Xh_plus2, Xh_minus2, resc=5, th=4):
         tzxyf, tzxy_plus, tzxy_minus = np.array([0, 0, 0]), np.array([0, 0, 0]), np.array([0, 0, 0])
         N_plus, N_minus = 0, 0
         if (len(Xh_plus1) > 0) and (len(Xh_plus2) > 0):
-            X = Xh_plus1[:, :3]
-            X_ref = Xh_plus2[:, :3]
+            X = Xh_plus1[Xh_plus1[:, -1] > th, :3]
+            X_ref = Xh_plus2[Xh_plus2[:, -1] > th, :3]
             tzxy_plus, N_plus = self.get_best_translation_points(X, X_ref, resc=resc)
         if (len(Xh_minus1) > 0) and (len(Xh_minus2) > 0):
-            X = Xh_minus1[:, :3]
-            X_ref = Xh_minus2[:, :3]
+            X = Xh_minus1[Xh_minus1[:, -1] > th, :3]
+            X_ref = Xh_minus2[Xh_minus2[:, -1] > th, :3]
             tzxy_minus, N_minus = self.get_best_translation_points(X, X_ref, resc=resc)
         if np.max(np.abs(tzxy_minus - tzxy_plus)) <= 2:
-            tzxyf = -(tzxy_plus * N_plus + tzxy_minus * N_minus) / (N_plus + N_minus)
+            tzxyf = (tzxy_plus * N_plus + tzxy_minus * N_minus) / (N_plus + N_minus)
         else:
-            tzxyf = -[tzxy_plus, tzxy_minus][np.argmax([N_plus, N_minus])]
+            tzxyf = [tzxy_plus, tzxy_minus][np.argmax([N_plus, N_minus])]
 
         return [tzxyf, tzxy_plus, tzxy_minus, N_plus, N_minus]
 
@@ -781,16 +824,17 @@ class AlignDapiFeatures(analysistask.AnalysisTask):
         gpu = self.dataSet.reserve_gpu(self)
         device = torch.device("cuda:0" if (torch.cuda.is_available() and gpu) else "cpu")
         fixed_image = self.preprocess_image(
-            fixed_image,
-            self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"],
-            device
+            fixed_image, self.dataSet.get_data_organization().data.iloc[channel]["fiducialColor"], device
         )
         Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image, device)
         Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image, device)
+        imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
+        self.dapi_features[imaging_round] = [Xh_plus_fixed, Xh_minus_fixed]
         self.dataSet.release_gpu(self)
         return Xh_plus_fixed, Xh_minus_fixed
 
     def run_analysis(self) -> None:
+        self.dapi_features = {}
         Xh_plus_fixed, Xh_minus_fixed = self.get_dapi_features(self.parameters["reference_round"])
         self.drifts = {}
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
