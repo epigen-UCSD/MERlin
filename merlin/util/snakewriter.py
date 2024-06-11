@@ -10,7 +10,7 @@ from merlin.core import analysistask, dataset
 def expand_as_string(task: analysistask.AnalysisTask) -> str:
     """Generate the expand function for the output of a parallel analysis task."""
     filename = task.status_file("done", fragment="{g}")
-    return f"expand('{filename}', g={list(task.fragment_list)})"
+    return f"expand(r'{filename}', g={list(task.fragment_list)})"
 
 
 def generate_output(
@@ -29,7 +29,7 @@ def generate_output(
     are required for input to `reftask` and the expand string is returned.
     """
     if not task.is_parallel() or finalize:
-        return f"'{task.status_file('done')}'"
+        return f"r'{task.status_file('done')}'"
     if task == reftask:
         return expand_as_string(task)
     depends_all = False
@@ -41,9 +41,9 @@ def generate_output(
             depends_all = True
     if depends_all:
         if task.has_finalize_step():
-            return f"'{task.status_file('done')}'"
+            return f"r'{task.status_file('done')}'"
         return expand_as_string(task)
-    return f"'{task.status_file('done', fragment='{i}')}'"
+    return f"r'{task.status_file('done', fragment='{i}')}'"
 
 
 def generate_input(task: analysistask.AnalysisTask, *, finalize: bool = False) -> str:
@@ -102,7 +102,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python",
         f"  output: {generate_output(task)}",
         f"  message: '{generate_message(task)}'",
         f"  threads: {task.threads}",
-        f"  shell: '{generate_shell_command(task, python_path, gpu_jobs)}'",
+        f"  shell: r'{generate_shell_command(task, python_path, gpu_jobs)}'",
     ]
     if task.has_finalize_step():
         lines.extend(
@@ -112,7 +112,7 @@ def snakemake_rule(task: analysistask.AnalysisTask, python_path: str = "python",
                 f"  input: {generate_input(task, finalize=True)}",
                 f"  output: {generate_output(task, finalize=True)}",
                 f"  message: '{generate_message(task, finalize=True)}'",
-                f"  shell: '{generate_shell_command(task, python_path, gpu_jobs, finalize=True)}'",
+                f"  shell: r'{generate_shell_command(task, python_path, gpu_jobs, finalize=True)}'",
             ]
         )
     return "\n".join(lines)
