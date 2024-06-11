@@ -5,7 +5,6 @@ import json
 import os
 import pickle
 import pstats
-import resource
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -199,7 +198,7 @@ class AnalysisTask:
                 stats.print_stats()
                 self.logger.info(stat_string.getvalue())
             self.record_status("done")
-            self.logger.info(f"Peak memory usage: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}")
+            #self.logger.info(f"Peak memory usage: {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}")
             self.logger.info(f"Completed {self.analysis_name} {self.fragment}")
             self.dataSet.close_logger(self, self.fragment)
         except Exception as e:
