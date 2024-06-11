@@ -11,7 +11,6 @@ number of jobs that can use the GPU simultaneously (`--gpu-jobs`). MERlin requir
 parameter, however it is not used by the client as it will run jobs relevant to the dataset that
 was given when starting the server.
 """
-import curses
 import datetime
 import multiprocessing
 import time
@@ -210,6 +209,7 @@ def interface(stdscr, messages, dataset):
 
 
 def start_server(dataset, analysis_parameters, args):
+    import curses  # Module not available on Windows
     messages = multiprocessing.Queue()
     server_kwargs = {"messages": messages, "dataset": dataset, "analysis_parameters": analysis_parameters, "args": args}
     p = multiprocessing.Process(target=server_process, kwargs=server_kwargs)
