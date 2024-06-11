@@ -1,4 +1,4 @@
-"""Server for distributing MERlin jobs.
+"""Server for distributing MERlin jobs across machines.
 
 MERlin can be started in server mode using the parameter `--server {hostname}:{port}`. The MERlin
 command should also include all the normal parameters for running the original snakemake mode.
