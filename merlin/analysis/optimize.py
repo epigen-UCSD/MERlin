@@ -39,6 +39,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
                 "optimize_background": False,
                 "optimize_chromatic_correction": False,
                 "crop_width": 0,
+                "optimize_3d": False,
             }
         )
 
@@ -73,6 +74,8 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
 
         fov_index, z_index = self.fragment.split("__")
         z_index = int(z_index)
+        if self.parameters["optimize_3d"]:
+            z_index = None
 
         scale_factors = self._get_previous_scale_factors()
         backgrounds = self._get_previous_backgrounds()
@@ -84,9 +87,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
         chromatic_corrector = aberration.RigidChromaticCorrector(chromatic_transformation, self.get_reference_color())
         self.chromatic_corrections = chromatic_transformation
         preprocess_task = self.dataSet.load_analysis_task(self.parameters["preprocess_task"], fov_index)
-        warped_images = preprocess_task.get_processed_image_set(
-            fov_index, zIndex=z_index, chromaticCorrector=chromatic_corrector
-        )
+        warped_images = preprocess_task.get_processed_image_set(z_index, chromatic_corrector)
 
         decoder = decoding.PixelBasedDecoder(codebook)
         area_threshold = self.parameters["area_threshold"]

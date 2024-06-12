@@ -98,7 +98,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
 
         else:
             for zIndex in range(zPositionCount):
-                imageSet = self.preprocess_task.get_processed_image_set(self.fragment, zIndex, chromaticCorrector)
+                imageSet = self.preprocess_task.get_processed_image_set(zIndex, chromaticCorrector)
                 imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
                 di, pm, _, d = decoder.decode_pixels(
@@ -158,7 +158,7 @@ class Decode(BarcodeSavingParallelAnalysisTask):
     def _process_independent_z_slice(
         self, fov: int, zIndex: int, chromaticCorrector, scaleFactors, backgrounds, preprocessTask, decoder
     ):
-        imageSet = preprocessTask.get_processed_image_set(fov, zIndex, chromaticCorrector)
+        imageSet = preprocessTask.get_processed_image_set(zIndex, chromaticCorrector)
         imageSet = imageSet.reshape((imageSet.shape[0], imageSet.shape[-2], imageSet.shape[-1]))
 
         di, pm, npt, d = decoder.decode_pixels(

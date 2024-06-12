@@ -1,4 +1,5 @@
-import os
+"""Analysis tasks for performing image pre-processing."""
+
 from functools import cached_property
 
 import cv2
@@ -9,30 +10,7 @@ from merlin.data import codebook
 from merlin.util import aberration, deconvolve, imagefilters
 
 
-class Preprocess(analysistask.AnalysisTask):
-    """
-    An abstract class for preparing data for barcode calling.
-    """
-
-    def _image_name(self, fov):
-        destPath = self.dataSet.get_analysis_subdirectory(self.analysis_name, subdirectory="preprocessed_images")
-        return os.sep.join([destPath, "fov_" + str(fov) + ".tif"])
-
-    def get_pixel_histogram(self, fov=None):
-        if fov is not None:
-            return self.dataSet.load_numpy_analysis_result("pixel_histogram", self.analysis_name, fov, "histograms")
-
-        pixelHistogram = np.zeros(self.get_pixel_histogram(self.dataSet.get_fovs()[0]).shape)
-        for f in self.dataSet.get_fovs():
-            pixelHistogram += self.get_pixel_histogram(f)
-
-        return pixelHistogram
-
-    def _save_pixel_histogram(self, histogram, fov):
-        self.dataSet.save_numpy_analysis_result(histogram, "pixel_histogram", self.analysis_name, fov, "histograms")
-
-
-class DeconvolutionPreprocess(Preprocess):
+class DeconvolutionPreprocess(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True)
 
@@ -46,25 +24,20 @@ class DeconvolutionPreprocess(Preprocess):
         if "decon_filter_size" not in self.parameters:
             self.parameters["decon_filter_size"] = int(2 * np.ceil(2 * self.parameters["decon_sigma"]) + 1)
 
-        self._highPassSigma = self.parameters["highpass_sigma"]
-        self._deconSigma = self.parameters["decon_sigma"]
-        self._deconIterations = self.parameters["decon_iterations"]
-
     def get_codebook(self) -> codebook.Codebook:
         return self.dataSet.get_codebook(self.parameters["codebook_index"])
 
     def get_processed_image_set(
-        self, fov, zIndex: int = None, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, z_index: int = None, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        if zIndex is None:
+        if z_index is None:
             return np.array(
                 [
                     [
                         self.get_processed_image(
-                            fov,
                             self.dataSet.get_data_organization().get_data_channel_for_bit(b),
                             zIndex,
-                            chromaticCorrector,
+                            chromatic_corrector,
                         )
                         for zIndex in range(len(self.dataSet.get_z_positions()))
                     ]
@@ -75,43 +48,42 @@ class DeconvolutionPreprocess(Preprocess):
             return np.array(
                 [
                     self.get_processed_image(
-                        fov,
                         self.dataSet.get_data_organization().get_data_channel_for_bit(b),
-                        zIndex,
-                        chromaticCorrector,
+                        z_index,
+                        chromatic_corrector,
                     )
                     for b in self.get_codebook().get_bit_names()
                 ]
             )
 
     def get_processed_image(
-        self, fov: int, dataChannel: int, zIndex: int, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, data_channel: int, z_index: int, chromatic_corrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        input_image = self.warp_task.get_z_aligned_frame(dataChannel, zIndex)
+        input_image = self.warp_task.get_z_aligned_frame(data_channel, z_index)
         if "flat_field_task" in self.dependencies:
             input_image = self.flat_field_task.process_image(
-                input_image, self.dataSet.get_data_organization().get_data_channel_color(dataChannel)
+                input_image, self.dataSet.get_data_organization().get_data_channel_color(data_channel)
             )
-        processed_image = self._preprocess_image(input_image)
-        return self.warp_task.align_image(dataChannel, processed_image, chromaticCorrector)
+        processed_image = self.process_image(input_image)
+        return self.warp_task.align_image(data_channel, processed_image, chromatic_corrector)
 
-    def _high_pass_filter(self, inputImage: np.ndarray) -> np.ndarray:
-        highPassFilterSize = int(2 * np.ceil(2 * self._highPassSigma) + 1)
-        hpImage = imagefilters.high_pass_filter(inputImage, highPassFilterSize, self._highPassSigma)
-        return hpImage.astype(np.float32)
+    def high_pass_filter(self, image: np.ndarray) -> np.ndarray:
+        highpass_sigma = self.parameters["highpass_sigma"]
+        filter_size = int(2 * np.ceil(2 * highpass_sigma) + 1)
+        hp_image = imagefilters.high_pass_filter(image, filter_size, highpass_sigma)
+        return hp_image.astype(np.float32)
 
-    def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
-        deconFilterSize = self.parameters["decon_filter_size"]
+    def process_image(self, image: np.ndarray) -> np.ndarray:
+        filter_size = self.parameters["decon_filter_size"]
 
         if self.parameters["lowpass_sigma"] > 0:
-            inputImage = cv2.GaussianBlur(inputImage, (21, 21), self.parameters["lowpass_sigma"])
-        filteredImage = self._high_pass_filter(inputImage)
+            image = cv2.GaussianBlur(image, (21, 21), self.parameters["lowpass_sigma"])
+        filtered_image = self.high_pass_filter(image)
         if self._deconIterations > 0:
             return deconvolve.deconvolve_lucyrichardson(
-                filteredImage, deconFilterSize, self._deconSigma, self._deconIterations
+                filtered_image, filter_size, self.parameters["decon_sigma"], self.parameters["decon_iterations"]
             ).astype(np.uint16)
-        else:
-            return filteredImage
+        return filtered_image
 
 
 class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
@@ -125,19 +97,15 @@ class DeconvolutionPreprocessGuo(DeconvolutionPreprocess):
         # if "decon_iterations" not in parameters:
         #    self.parameters["decon_iterations"] = 2
 
-        self._deconIterations = self.parameters["decon_iterations"]
-
-    def _preprocess_image(self, inputImage: np.ndarray) -> np.ndarray:
-        deconFilterSize = self.parameters["decon_filter_size"]
-
-        filteredImage = self._high_pass_filter(inputImage)
-        deconvolvedImage = deconvolve.deconvolve_lucyrichardson_guo(
-            filteredImage, deconFilterSize, self._deconSigma, self._deconIterations
+    def process_image(self, image: np.ndarray) -> np.ndarray:
+        filter_size = self.parameters["decon_filter_size"]
+        filtered_image = self.high_pass_filter(image)
+        return deconvolve.deconvolve_lucyrichardson_guo(
+            filtered_image, filter_size, self.parameters["decon_sigma"], self.parameters["decon_iterations"]
         ).astype(np.uint16)
-        return deconvolvedImage
 
 
-class DeconvolutionSdeconv(Preprocess):
+class DeconvolutionSdeconv(analysistask.AnalysisTask):
     def setup(self) -> None:
         super().setup(parallel=True, threads=8)
 
@@ -150,12 +118,11 @@ class DeconvolutionSdeconv(Preprocess):
         return self.dataSet.get_codebook(self.parameters["codebook_index"])
 
     def get_processed_image_set(
-        self, fov, zIndex: int = None, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, zIndex: int = None, chromaticCorrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
         return np.array(
             [
                 self.get_processed_image(
-                    fov,
                     self.dataSet.get_data_organization().get_data_channel_for_bit(b),
                     zIndex,
                     chromaticCorrector,
@@ -165,9 +132,9 @@ class DeconvolutionSdeconv(Preprocess):
         )
 
     def get_processed_image(
-        self, fov: int, dataChannel: int, zIndex: int = None, chromaticCorrector: aberration.ChromaticCorrector = None
+        self, dataChannel: int, zIndex: int = None, chromaticCorrector: aberration.ChromaticCorrector = None
     ) -> np.ndarray:
-        inputImage = self.warp_task.get_aligned_image(fov, dataChannel, zIndex, chromaticCorrector)
+        inputImage = self.warp_task.get_aligned_image(dataChannel, zIndex, chromaticCorrector)
         return self._preprocess_image(inputImage)
 
     def _high_pass_filter(self, inputImage: np.ndarray) -> np.ndarray:
