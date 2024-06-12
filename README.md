@@ -1,5 +1,3 @@
-[![CircleCI](https://circleci.com/gh/emanuega/MERlin/tree/master.svg?style=svg)](https://circleci.com/gh/emanuega/MERlin/tree/master)
-[![codecov](https://codecov.io/gh/emanuega/MERlin/branch/master/graph/badge.svg)](https://codecov.io/gh/emanuega/MERlin)
 [![DOI](https://zenodo.org/badge/202668055.svg)](https://zenodo.org/badge/latestdoi/202668055)
 
 # MERlin - Extensible pipeline for scalable data analysis
@@ -13,29 +11,20 @@ execute workflows on a single computer, on a high performance cluster, or on the
 If MERlin is useful for your research, consider citing:
 Emanuel, G., Eichhorn, S. W., Zhuang, X. 2020, MERlin - scalable and extensible MERFISH analysis software, v0.1.6, Zenodo, doi:10.5281/zenodo.3758540 
 
-Please find the most recent version of MERlin [here](https://github.com/emanuega/merlin).
-
-## MERFISH data analysis
-
-![Image of MERlin](docs/_static/merlin_headline.png "MERlin - the MERFISH decoding software")
-
-MERlin was originally created for decoding MERFISH datasets. 
-[MERFISH](https://science.sciencemag.org/lookup/doi/10.1126/science.aaa6090) is a technology for 
-spatially resolved RNA profiling of 10s to 10,000s of RNA species in individual cells 
-with high accuracy and high detection efficiency. The standard MERlin MERFISH analysis
-workflow decodes and segments MERFISH datasets to determine RNA molecules and the 
-cell boundaries represented in the raw images. 
-
-## Documentation
-
-For more information on installation and usage, please see the [documentation](https://emanuega.github.io/MERlin/).
+This fork of MERlin contains additions and modifications made at the UCSD Center for Epigenomics. These changes include:
+* Additional drift correction methods which can correct drift in the z-axis and support correcting drift based on either DAPI staining or fiducial beads. 
+* Integration of Cellpose segmentation.
+* FinalOutput task which generates a scanpy object and initial cell clustering.
+* General performance improvements and bug fixes.
+* Changes to fix compatibility issues with newer versions of various python packages.
 
 ## Authors
 
+### Xiaowei Zhuang lab, Harvard (original MERlin authors)
 * [**George Emanuel**](mailto:emanuega0@gmail.com) - *Initial work* 
 * **Stephen Eichhorn**
 * **Leonardo Sepulveda**
 
-Contributions are welcome! Please see the 
-[documentation](https://emanuega.github.io/MERlin/contributing.html) for contribution guidelines.
-
+### University of California, San Diego
+* [**Colin Kern**](mailto:jckern@health.ucsd.edu) (Center for Epigenomics)
+* New drift correction methods: Bogdan Bintu (Department of Cellular and Molecular Medicine)
