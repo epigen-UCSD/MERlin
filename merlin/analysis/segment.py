@@ -26,9 +26,9 @@ class FeatureSavingAnalysisTask(analysistask.AnalysisTask):
     def setup(self, *, parallel: bool) -> None:
         super().setup(parallel=parallel)
 
-    def reset_analysis(self, fragmentIndex: int = None) -> None:
+    def reset_analysis(self) -> None:
         super().reset_analysis()
-        self.get_feature_database().empty_database(fragmentIndex)
+        self.get_feature_database().empty_database(self.fragment)
 
     def get_feature_database(self) -> spatialfeature.SpatialFeatureDB:
         """Get the spatial feature database this analysis task saves
