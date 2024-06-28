@@ -755,7 +755,7 @@ class MERFISHDataSet(ImageDataSet):
         skip: list = None,
         profile: bool = False,
         analysis_suffix: str | None = None,
-        gpu_jobs: int = 2,
+        gpu_jobs: int = 1,
         psf_file: str = None,
     ):
         """Create a MERFISH dataset for the specified raw data.
@@ -1032,8 +1032,8 @@ class MERFISHDataSet(ImageDataSet):
                 diff = positions.loc[i] - positions.loc[fov]
                 if self.flipVertical:
                     diff["X"] = -diff["X"]
-                if not self.flipHorizontal:
-                    diff["Y"] = -diff["Y"]
+                #if not self.flipHorizontal:
+                #diff["Y"] = -diff["Y"]
                 _get_x_slice = functools.partial(self._get_overlap_slice, axis=0)
                 _get_y_slice = functools.partial(self._get_overlap_slice, axis=1)
                 self.overlaps[f"{i}__{fov}"] = (
