@@ -323,6 +323,11 @@ class FiducialBeadWarp(Warp):
 
 
 class Warp3D(analysistask.AnalysisTask):
+    def setup(self, *, parallel: bool, threads: int) -> None:
+        super().setup(parallel=parallel, threads=threads)
+
+        self.set_default_parameters({"mask_z": True})
+
     def get_aligned_image_set(self, fov: int, chromaticCorrector: aberration.ChromaticCorrector = None) -> np.ndarray:
         """Get the set of transformed images for the specified fov.
 
@@ -342,6 +347,12 @@ class Warp3D(analysistask.AnalysisTask):
         return np.array([[self.get_aligned_image(fov, d, z, chromaticCorrector) for z in z_indexes] for d in channels])
 
     def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
+        if self.parameters["mask_z"]:
+            zdrifts = [drift[0] for drift in self.get_transformation().values()]
+            if z_index <= np.ceil(max(zdrifts)):
+                return np.zeros(self.dataSet.get_image_dimensions())
+            if z_index >= len(self.dataSet.get_z_positions()) + np.floor(min(zdrifts)):
+                return np.zeros(self.dataSet.get_image_dimensions())
         try:
             zdrift, _, _ = self.get_transformation(channel)
             zdrift = -zdrift

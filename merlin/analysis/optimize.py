@@ -56,6 +56,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
             self.parameters["fov_index"] = [file.stem.split("select_frame_")[-1] for file in files]
             if len(self.parameters["fov_index"]) < self.parameters["fov_per_iteration"]:
                 zIndices = list(range(len(self.dataSet.get_z_positions())))
+                zIndices = zIndices[5:-5]  # Avoid artifacts from z-drift or blurry images
                 combinations = set(itertools.product(self.dataSet.get_fovs(), zIndices))
                 combinations -= {tuple(zslice.split("__")) for zslice in self.parameters["fov_index"]}
                 for zslice in np.random.choice(
