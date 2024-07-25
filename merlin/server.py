@@ -177,6 +177,7 @@ class AnalysisStatus:
 
 
 def interface(stdscr, messages, dataset):
+    import curses
     stdscr.clear()
     curses.curs_set(0)
     stdscr.nodelay(True)
