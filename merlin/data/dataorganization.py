@@ -383,7 +383,7 @@ class DataOrganization:
                 else:
                     required_frames = max(np.max(frames), channel_info["fiducialFrame"])
                 if required_frames >= image_size[2]:
-                    raise InputDataError(
+                    print(
                         (
                             "Insufficient frames in data for channel {0} and "
                             "fov {1}. Expected {2} frames "
