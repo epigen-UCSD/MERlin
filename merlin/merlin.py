@@ -55,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--client", help="start as a task client")
     parser.add_argument("--gpu-jobs", type=int, help="number of jobs to allow to use the GPU in parallel")
     parser.add_argument("--psf", help="path to the point spread function")
+    parser.add_argument("--config", help="configuration filename")
 
     return parser
 
@@ -126,6 +127,8 @@ def run_merlin() -> None:
     if args.analysis_parameters:
         # This is run in all cases that analysis parameters are provided
         # so that new analysis tasks are generated to match the new parameters
+        with Path(dataset.analysis_path, "config.json").open("w") as f:
+            json.dump(vars(args), f, indent=4)
         with Path(parameters_home, args.analysis_parameters).open() as f:
             snakefile_path = generate_analysis_tasks_and_snakefile(dataset, f, args.gpu_jobs)
 
