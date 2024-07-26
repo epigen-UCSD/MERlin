@@ -673,7 +673,10 @@ class ImageDataSet(DataSet):
 
     def load_image(self, imagePath, frameIndex):
         with imagereader.infer_reader(self.raw_data_portal.open_file(imagePath)) as reader:
-            imageIn = reader.load_frame(int(frameIndex))
+            try:
+                imageIn = reader.load_frame(int(frameIndex))
+            except AssertionError:
+                imageIn = np.zeros(self.imageDimensions)
             if self.transpose:
                 imageIn = np.transpose(imageIn)
             if self.flipHorizontal:
