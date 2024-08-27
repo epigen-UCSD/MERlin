@@ -323,6 +323,7 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
             filtered_fraction = 0
             filtered_gene_fraction = 0
             filtered_pixel_fraction = 0
+            gene_pixel_fraction = 0
         return {
             "total": len(self.barcodes),
             "blanks": len(blanks),
