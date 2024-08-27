@@ -22,7 +22,6 @@ class AbstractFilterBarcodes(decode.BarcodeSavingParallelAnalysisTask):
 
 
 class FilterBarcodes(AbstractFilterBarcodes):
-
     """
     An analysis task that filters barcodes based on area and mean
     intensity.
@@ -31,24 +30,21 @@ class FilterBarcodes(AbstractFilterBarcodes):
     def setup(self) -> None:
         super().setup(parallel=True)
 
-        self.add_dependencies("decode_task")
+        self.add_dependencies({"decode_task": []})
         self.set_default_parameters({"area_threshold": 3, "intensity_threshold": 200, "distance_threshold": 1e6})
+        self.define_results("barcodes")
 
     def run_analysis(self):
         areaThreshold = self.parameters["area_threshold"]
         intensityThreshold = self.parameters["intensity_threshold"]
         distanceThreshold = self.parameters["distance_threshold"]
-        barcodeDB = self.get_barcode_database()
-        barcodeDB.write_barcodes(
-            self.decode_task.get_barcode_database().get_filtered_barcodes(
-                areaThreshold, intensityThreshold, distanceThreshold=distanceThreshold, fov=self.fragment
-            ),
-            fov=self.fragment,
-        )
+        self.barcodes = self.decode_task.load_result("barcodes")
+        self.barcodes = self.barcodes[self.barcodes[:, 0] >= intensityThreshold]
+        self.barcodes = self.barcodes[self.barcodes[:, 2] >= areaThreshold]
+        self.barcodes = self.barcodes[self.barcodes[:, 4] <= intensityThreshold]
 
 
 class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
-
     """
     An analysis task that generates a three-dimension mean intenisty,
     area, minimum distance histogram for barcodes as they are decoded.
@@ -282,7 +278,6 @@ class GenerateAdaptiveThreshold(analysistask.AnalysisTask):
 
 
 class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
-
     """
     An analysis task that filters barcodes based on a mean intensity threshold
     for each area based on the abundance of blank barcodes. The threshold
@@ -319,12 +314,21 @@ class AdaptiveFilterBarcodes(AbstractFilterBarcodes):
         genes = self.barcodes[np.isin(self.barcodes[:, -1], self.get_codebook().get_coding_indexes())]
         unfiltered = self.decode_task.load_result("barcodes", self.fragment)
         unfiltered_genes = unfiltered[np.isin(unfiltered[:, -1], self.get_codebook().get_coding_indexes())]
+        try:
+            filtered_fraction = 1 - (len(self.barcodes) / len(unfiltered))
+            filtered_gene_fraction = 1 - (len(genes) / len(unfiltered_genes))
+            filtered_pixel_fraction = 1 - (genes[:, 2].sum() / unfiltered_genes[:, 2].sum())
+            gene_pixel_fraction = genes[:, 2].sum() / pixels
+        except ZeroDivisionError:
+            filtered_fraction = 0
+            filtered_gene_fraction = 0
+            filtered_pixel_fraction = 0
         return {
             "total": len(self.barcodes),
             "blanks": len(blanks),
             "genes": len(genes),
-            "gene_pixel_fraction": genes[:, 2].sum() / pixels,
-            "filtered_fraction": 1 - (len(self.barcodes) / len(unfiltered)),
-            "filtered_gene_fraction": 1 - (len(genes) / len(unfiltered_genes)),
-            "filtered_pixel_fraction": 1 - (genes[:, 2].sum() / unfiltered_genes[:, 2].sum())
+            "gene_pixel_fraction": gene_pixel_fraction,
+            "filtered_fraction": filtered_fraction,
+            "filtered_gene_fraction": filtered_gene_fraction,
+            "filtered_pixel_fraction": filtered_pixel_fraction,
         }
