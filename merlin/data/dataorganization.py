@@ -270,11 +270,16 @@ class DataOrganization:
             & (self.fileMap["imagingRound"] == imaging_round)
         ]
         if selection.empty:
-            selection = self.fileMap[
-                (self.fileMap["imageType"] == image_type)
-                & (self.fileMap["fov"].astype(int) == int(fov))
-                & (self.fileMap["imagingRound"] == imaging_round)
-            ]
+            try:
+                selection = self.fileMap[
+                    (self.fileMap["imageType"] == image_type)
+                    & (self.fileMap["fov"].astype(int) == int(fov))
+                    & (self.fileMap["imagingRound"] == imaging_round)
+                ]
+            except ValueError:
+                print(image_type, fov, imaging_round)
+                print(self.fileMap)
+                raise
         filemap_path = selection["imagePath"].to_numpy()[0]
         return self.dataset.raw_data_path / filemap_path
 
