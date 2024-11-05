@@ -185,8 +185,8 @@ class DataOrganization:
         Returns:
             The full path to the image file containing the fiducials
         """
-        image_type = self.data.loc[data_channel, "fiducialImageType"]
-        imaging_round = self.data.loc[data_channel, "fiducialImagingRound"]
+        image_type = self.data.iloc[data_channel]["fiducialImageType"]
+        imaging_round = self.data.iloc[data_channel]["fiducialImagingRound"]
         return self._get_image_path(image_type, fov, imaging_round)
 
     def get_fiducial_frame_index(self, data_channel: int) -> int:
@@ -307,7 +307,7 @@ class DataOrganization:
 
             filenames = self.dataset.get_image_file_names()
             if len(filenames) == 0:
-                raise dataset.DataFormatException("No image files found at %s." % self.dataset.rawDataPath) from e
+                raise merlin.core.dataset.DataFormatException("No image files found at %s." % self.dataset.rawDataPath) from e
             file_data = []
             for current_type, current_index in zip(unique_types, unique_indices):
                 regex = re.compile(self.data.imageRegExp[current_index])
@@ -325,7 +325,7 @@ class DataOrganization:
                             file_data.append(transformed_name)
 
                 if not matching_files:
-                    raise dataset.DataFormatException(
+                    raise merlin.core.dataset.DataFormatException(
                         "Unable to identify image files matching regular "
                         + "expression %s for image type %s." % (self.data.imageRegExp[current_index], current_type)
                     ) from e
