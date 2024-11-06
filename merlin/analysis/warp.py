@@ -610,7 +610,7 @@ class AlignDapiFeatures(Warp3D):
         """Get the transformations for aligning images for the specified field of view."""
         drifts = self.load_result("drifts")
         if channel is None:
-            return {k: v[0] for k, v in drifts.items()}
+            return {k: v[0] for k, v in drifts.items() if v}
         imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
         if drifts[imaging_round] is None:
             return np.array([0, 0, 0])
