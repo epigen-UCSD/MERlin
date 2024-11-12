@@ -72,6 +72,7 @@ class DataOrganization:
             "imageRegExp",
             "fiducialImageType",
             "fiducialRegExp",
+            "color"
         ]
         self.data[string_columns] = self.data[string_columns].astype("str")
         self.fov_list = None
