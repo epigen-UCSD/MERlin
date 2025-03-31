@@ -390,4 +390,6 @@ class ZarrReader(Reader):
         """
         super(ZarrReader, self).load_frame(frame_number)
 
+        if self.zarr.dtype == np.uint8:
+            return self.zarr[frame_number, :, :].astype(np.uint16)**2
         return self.zarr[frame_number, :, :]
