@@ -126,7 +126,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
             return pd.concat([self.get_barcode_table(fov) for fov in self.dataSet.get_fovs()])
 
         return self.dataSet.load_dataframe_from_csv(
-            "barcodes", self.analysis_name, fov, subdirectory="barcodes", index_col=0
+            "barcodes", self.analysis_name, fov, subdirectory="barcodes"
         )
 
     def apply_mask(self, barcodes, mask):
