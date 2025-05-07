@@ -83,6 +83,21 @@ class Warp(analysistask.AnalysisTask):
             ).astype(image.dtype)
         return transform.warp(image, transformation, preserve_range=True).astype(image.dtype)
 
+    def get_z_aligned_frame(self, channel: int, z_index: int) -> np.ndarray:
+        """Function added to be compatible with Warp3D."""
+        return self.dataSet.get_raw_image(channel, self.fragment, self.dataSet.z_index_to_position(z_index))
+
+    def align_image(
+        self, channel: int, input_image: np.ndarray, chromatic_corrector: aberration.ChromaticCorrector = None
+    ) -> np.ndarray:
+        transformation = self.get_transformation(channel)
+        if chromatic_corrector is not None:
+            color = self.dataSet.get_data_organization().get_data_channel_color(channel)
+            return transform.warp(
+                chromatic_corrector.transform_image(input_image, color), transformation, preserve_range=True
+            ).astype(input_image.dtype)
+        return transform.warp(input_image, transformation, preserve_range=True).astype(input_image.dtype)
+
     def _save_transformations(self, transformationList: List, fov: int) -> None:
         self.dataSet.save_numpy_analysis_result(
             np.array(transformationList, dtype=object),
@@ -93,7 +108,7 @@ class Warp(analysistask.AnalysisTask):
         )
 
     def get_transformation(
-        self, fov: int, dataChannel: int = None
+        self, dataChannel: int = None
     ) -> Union[transform.EuclideanTransform, List[transform.EuclideanTransform]]:
         """Get the transformations for aligning images for the specified field of view.
 
@@ -108,7 +123,7 @@ class Warp(analysistask.AnalysisTask):
                 not specified.
         """
         transformationMatrices = self.dataSet.load_numpy_analysis_result(
-            "offsets", self, resultIndex=fov, subdirectory="transformations"
+            "offsets", self, resultIndex=self.fragment, subdirectory="transformations"
         )
         if dataChannel is not None:
             return transformationMatrices[
@@ -279,12 +294,12 @@ class FiducialBeadWarp(Warp):
 
         return (-(np.array(im_cor.shape) - 1) / 2.0 + [y, x]).astype(int)
 
-    def run_analysis(self, fragment: str):
-        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], fragment))
+    def run_analysis(self):
+        fixedImage = self._filter(self.dataSet.get_fiducial_image(self.parameters["reference_round"], self.fragment))
         offsets = []
         im2 = fixedImage.copy()
         for channel in self.dataSet.get_data_organization().get_one_channel_per_round():
-            im_beads = self._filter(self.dataSet.get_fiducial_image(channel, fragment))
+            im_beads = self._filter(self.dataSet.get_fiducial_image(channel, self.fragment))
             im1 = im_beads.copy()
             Txyzs = []
             dic_ims1 = self._get_tiles(im1)
@@ -316,10 +331,10 @@ class FiducialBeadWarp(Warp):
                         pass
                         # print("No kept beads, fragmentIndex", fragmentIndex, ", channel", channel, ", tile", key)
                 else:
-                    print("No beads found, fragmentIndex", fragment, ", channel", channel, ", tile", key)
+                    print("No beads found, fragmentIndex", self.fragment, ", channel", channel, ", tile", key)
             offsets.append(np.median(Txyzs, 0))
         transformations = [transform.SimilarityTransform(translation=[-x[1], -x[0]]) for x in offsets]
-        self._save_transformations(transformations, fragment)
+        self._save_transformations(transformations, self.fragment)
 
 
 class Warp3D(analysistask.AnalysisTask):
