@@ -152,6 +152,7 @@ class PartitionBarcodesFromMask(analysistask.AnalysisTask):
         cell_mask = self.segment_task.load_mask()
         barcodes["cell_id"] = self.apply_mask(barcodes, cell_mask).astype(str)
         barcodes["cell_id"] = self.fragment + "__" + barcodes["cell_id"]
+        barcodes["cell_id"] = ["-1" if x.split("__")[-1] == "0" else x for x in barcodes["cell_id"]]
 
         barcodes["gene"] = [codebook.get_name_for_barcode_index(i) for i in barcodes["barcode_id"]]
 

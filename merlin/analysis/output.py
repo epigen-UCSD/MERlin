@@ -25,6 +25,8 @@ class FinalOutput(analysistask.AnalysisTask):
         barcodes["cell_id"] = [
             cell_mapping[cell_id] if cell_id in cell_mapping else cell_id for cell_id in barcodes["cell_id"]
         ]
+        barcodes = barcodes[~barcodes["gene"].str.contains("blank")]
+        barcodes = barcodes[~barcodes["gene"].str.contains("notarget")]
         self.detected_transcripts = barcodes
 
         matrix = self.partition_task.get_cell_by_gene_matrix()
