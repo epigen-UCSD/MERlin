@@ -15,6 +15,7 @@ AlignDapiFeatures
 """
 
 import pickle
+from pathlib import Path
 from functools import cached_property
 from typing import List, Tuple, Union
 
@@ -609,6 +610,18 @@ class PrecomputedAlign(analysistask.AnalysisTask):
         return ndimage.shift(input_image[z_index], [-x, y], order=0)
 
 
+class PrecomputedAlign3D(Warp3D):
+    def setup(self) -> None:
+        super().setup(parallel=True, threads=16)
+
+    def get_transformation(self, channel: int = None) -> np.ndarray:
+        drifts = pickle.load(open(self.parameters["drift_dir"] + f"/driftNew_Conv_zscan__{self.fragment}--.pkl", "rb"))
+        drifts = {int(k.split("/")[-2].split("_")[0].strip("H")): v[0] for k, v in zip(drifts[1], drifts[0])}
+        if channel is None:
+            return drifts
+        return drifts[self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)]
+
+
 class AlignDapiFeatures(Warp3D):
     def setup(self) -> None:
         super().setup(parallel=True, threads=16)
@@ -617,13 +630,16 @@ class AlignDapiFeatures(Warp3D):
 
         rounds = self.dataSet.get_data_organization().get_one_channel_per_round()
         reference = int(rounds[len(rounds) // 2])
-        self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": reference})
+        self.set_default_parameters({"th_fit": 3, "delta": 5, "delta_fit": 5, "reference_round": reference, "use_features": None, "th": 3})
 
         self.define_results("drifts", "dapi_features")
 
     def get_transformation(self, channel: int = None) -> np.ndarray:
         """Get the transformations for aligning images for the specified field of view."""
         drifts = self.load_result("drifts")
+        if self.parameters["use_features"] is not None:
+            for k, v in drifts.items():
+                drifts[k][0] = drifts[k][0][[0,2,1]]*np.array([1,1,-1])
         if channel is None:
             return {k: v[0] for k, v in drifts.items() if v}
         imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
@@ -745,6 +761,21 @@ class AlignDapiFeatures(Warp3D):
         return [tzxyf, tzxy_plus, tzxy_minus, N_plus, N_minus]
 
     def get_dapi_features(self, channel):
+        imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
+        if self.parameters["use_features"] is not None:
+            f,s = self.fragment.split("_")
+            #f = self.fragment
+            #s = "set1"
+            try:
+                dapi_fl = Path(self.parameters["use_features"], f"Conv_zscan__{f}--H{imaging_round}_MER_{s}--dapiFeatures.npz")
+                features = np.load(dapi_fl)
+            except FileNotFoundError:
+                dapi_fl = Path(self.parameters["use_features"], f"Conv_zscan__{f}--H{imaging_round}_MER__{s}--dapiFeatures.npz")
+                features = np.load(dapi_fl)
+            return features["Xh_plus"], features["Xh_minus"]
+        #if imaging_round in self.dapi_features:
+        #    Xh_plus_fixed, Xh_minus_fixed = self.dapi_features[imaging_round]
+        #    return Xh_plus_fixed, Xh_minus_fixed
         fixed_image = self.dataSet.get_fiducial_image(channel, self.fragment)
         gpu = self.dataSet.reserve_gpu(self)
         device = torch.device("cuda:0" if (torch.cuda.is_available() and gpu) else "cpu")
@@ -753,12 +784,14 @@ class AlignDapiFeatures(Warp3D):
         )
         Xh_plus_fixed = self.get_local_maxfast_tensor(fixed_image, device)
         Xh_minus_fixed = self.get_local_maxfast_tensor(-fixed_image, device)
-        imaging_round = self.dataSet.get_data_organization().get_imaging_round_for_channel(channel)
         self.dapi_features[imaging_round] = [Xh_plus_fixed, Xh_minus_fixed]
         self.dataSet.release_gpu(self)
         return Xh_plus_fixed, Xh_minus_fixed
 
     def run_analysis(self) -> None:
+        #try:
+        #    self.dapi_features = self.load_result("dapi_features")
+        #except IndexError:
         self.dapi_features = {}
         Xh_plus_fixed, Xh_minus_fixed = self.get_dapi_features(self.parameters["reference_round"])
         self.drifts = {}
@@ -768,5 +801,8 @@ class AlignDapiFeatures(Warp3D):
                 drift = None
             else:
                 Xh_plus_moving, Xh_minus_moving = self.get_dapi_features(channel)
-                drift = self.calculate_translation(Xh_plus_fixed, Xh_minus_fixed, Xh_plus_moving, Xh_minus_moving)
+                drift = self.calculate_translation(Xh_plus_fixed, Xh_minus_fixed, Xh_plus_moving, Xh_minus_moving, th=self.parameters["th"])
             self.drifts[imaging_round] = drift
+
+    def finalize_analysis(self) -> None:
+        pass

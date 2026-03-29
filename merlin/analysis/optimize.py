@@ -27,7 +27,7 @@ class OptimizeIteration(decode.BarcodeSavingParallelAnalysisTask):
     """An analysis task for performing a single iteration of scale factor optimization."""
 
     def setup(self) -> None:
-        super().setup(parallel=True, threads=4)
+        super().setup(parallel=True, threads=12)
 
         self.add_dependencies({"preprocess_task": [], "warp_task": ["drifts"]})
         self.add_dependencies({"previous_iteration": []}, optional=True)

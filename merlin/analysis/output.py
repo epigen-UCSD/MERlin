@@ -47,7 +47,9 @@ class FinalOutput(analysistask.AnalysisTask):
         sc.pp.calculate_qc_metrics(adata, percent_top=None, inplace=True)
         sc.pp.normalize_total(adata)
         sc.pp.log1p(adata, base=2)
-        sc.pp.neighbors(adata, n_neighbors=30, use_rep="X", metric="correlation")
+        #sc.pp.neighbors(adata, n_neighbors=30, use_rep="X", metric="correlation")
+        sc.pp.pca(adata)
+        sc.pp.neighbors(adata)
         sc.tl.leiden(adata)
         sc.tl.umap(adata, min_dist=0.3)
         self.scanpy_object = adata
